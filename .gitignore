@@ -12,3 +12,8 @@
 *.aab
 /.kotlin/
 /.claude/
+
+# Release signing (see the README). Never commit the key or its passwords.
+keystore.properties
+*.jks
+*.keystore
