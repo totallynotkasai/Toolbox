@@ -1,7 +1,7 @@
 package com.toolbox.app
 
 import com.toolbox.app.tools.coin.CoinStats
-import com.toolbox.app.tools.cointoss.CoinPhysics
+import com.toolbox.app.tools.coin.CoinPhysics
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -35,6 +35,26 @@ class CoinStatsTest {
         assertEquals(CoinStats(), CoinStats.decode(""))
         assertEquals(CoinStats(), CoinStats.decode("a,b,c,d"))
         assertEquals(CoinStats(), CoinStats.decode("1,2,3"))
+    }
+
+    @Test fun percentagesAreRoundedAndAddUpTo100() {
+        assertNull(CoinStats().percentages())
+        assertEquals(33 to 67, CoinStats(1, 2).percentages()) // not 33 / 66
+        assertEquals(13 to 87, CoinStats(1, 7).percentages()) // 12.5 rounds up, and tails isn't rounded up too
+        assertEquals(100 to 0, CoinStats(3, 0).percentages())
+        for (h in 0..40) for (t in 0..40) {
+            val p = CoinStats(h, t).percentages() ?: continue
+            assertEquals(100, p.first + p.second)
+        }
+    }
+
+    @Test fun combiningAddsTheCountsAndKeepsTheBusierHistory() {
+        val quick = CoinStats(3, 2, 1, "HTHHT")
+        val thrown = CoinStats(10, 12, 4, "HHTTTT")
+        assertEquals(CoinStats(13, 14, 4, "HHTTTT"), quick.combine(thrown))
+        assertEquals(CoinStats(13, 14, 4, "HHTTTT"), thrown.combine(quick))
+        assertEquals(thrown, CoinStats().combine(thrown))
+        assertEquals(quick, quick.combine(CoinStats()))
     }
 }
 
@@ -146,6 +166,32 @@ class CoinPhysicsTest {
         runToRest(coin)
         assertTrue("peak ${coin.peak}", coin.peak <= coin.ceiling + 0.01f)
         assertTrue(coin.flips > 3)
+    }
+
+    @Test fun anEmptyTableIsIgnored() {
+        // A stage squashed to nothing gives an infinitely wide table with a NaN depth and ceiling.
+        val coin = CoinPhysics(seed = 9)
+        coin.resize(Float.POSITIVE_INFINITY, Float.NaN, Float.NaN)
+        coin.resize(0f, 0f, 0f)
+        assertEquals(4f, coin.halfWidth)
+        assertEquals(4f, coin.halfDepth)
+        throwToRest(coin, 0.6f, 0.3f, 0f)
+        assertTrue("position ${coin.position}", coin.x.isFinite() && coin.y.isFinite() && coin.z.isFinite())
+        assertTrue(kotlin.math.abs(coin.x) < 4f && kotlin.math.abs(coin.z) < 4f)
+    }
+
+    @Test fun layingItDownShowsTheOtherModesFace() {
+        val coin = CoinPhysics(seed = 3, startHeads = true)
+        coin.lay(false)
+        assertFalse(coin.heads)
+        assertEquals(-1f, coin.pose().column(2).y, 1e-4f)
+        assertEquals(CoinPhysics.REST_Y, coin.y, 1e-4f)
+        coin.lay(true)
+        assertTrue(coin.heads)
+        assertEquals(1f, coin.pose().column(2).y, 1e-4f)
+        assertTrue(coin.toss(0.5f))
+        coin.lay(false) // ignored in the air
+        assertEquals(CoinPhysics.Phase.Flying, coin.phase)
     }
 
     @Test fun puttingItDownKeepsTheFace() {

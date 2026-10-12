@@ -1,12 +1,14 @@
-package com.toolbox.app.tools.dicetoss
+package com.toolbox.app.tools.dice
 
 import androidx.compose.ui.geometry.Offset
-import com.toolbox.app.tools.coin.Rot
-import com.toolbox.app.tools.coin.Vec3
+import com.toolbox.app.ui.common.Quat
+import com.toolbox.app.ui.common.Rot
+import com.toolbox.app.ui.common.Vec3
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.max
 import kotlin.math.round
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -61,6 +63,18 @@ class DieShape private constructor(
 
     /** The face pointing most nearly down: the one a settled die lies on. */
     fun bottomFace(r: Rot): Face = faces.minBy { worldY(r, it.normal) }
+
+    /** Lying flat on the table showing [value], turned [yaw] radians about the vertical. */
+    fun restingOn(value: Int, yaw: Float): Quat {
+        val flat = if (cornerValues != null) {
+            // A d4 shows the corner pointing up, so it lies on the one face that corner isn't part of.
+            val corner = cornerValues.indexOf(value).coerceAtLeast(0)
+            Quat.between(faces.first { corner !in it.cornerIndices }.normal, Vec3(0f, -1f, 0f))
+        } else {
+            Quat.between((faces.firstOrNull { it.value == value } ?: faces[0]).normal, Vec3(0f, 1f, 0f))
+        }
+        return (Quat.axisAngle(Vec3(0f, 1f, 0f), yaw) * flat).normalized()
+    }
 
     companion object {
         val SIDES = listOf(4, 6, 8, 10, 12, 20)
@@ -193,6 +207,31 @@ class DieShape private constructor(
             abs(n.x) > 0.5f -> if (n.x > 0) 3 else 4
             abs(n.y) > 0.5f -> if (n.y > 0) 1 else 6
             else -> if (n.z > 0) 2 else 5
+        }
+    }
+}
+
+/** What drawing a die needs: a physics die, or one of Quick mode's. */
+interface DieLook {
+    val shape: DieShape
+    /** Its centre, in table units (see [DicePhysics]). */
+    val position: Vec3
+    fun pose(): Rot
+}
+
+/**
+ * Spots for [n] dice in tidy rows [spacing] apart, none wider than [width]: as few rows as fit, with the dice shared
+ * out evenly and the front rows taking any spare. Each spot is an offset from the middle of the front row, x across
+ * and rows going back (−z), so every row is centred however many it holds.
+ */
+fun diceRows(n: Int, spacing: Float, width: Float): List<Vec3> {
+    if (n <= 0) return emptyList()
+    val perRow = max(1, (width / spacing).toInt() + 1)
+    val rows = (n + perRow - 1) / perRow
+    return buildList {
+        for (r in 0 until rows) {
+            val inRow = n / rows + if (r < n % rows) 1 else 0
+            for (i in 0 until inRow) add(Vec3((i - (inRow - 1) / 2f) * spacing, 0f, -r * spacing))
         }
     }
 }

@@ -28,8 +28,6 @@ import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.ToggleOn
-import androidx.compose.material.icons.filled.Toll
-import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -48,13 +46,11 @@ import com.toolbox.app.games.stack.StackScreen
 import com.toolbox.app.games.tictactoe.TicTacToeScreen
 import com.toolbox.app.games.twentyfortyeight.Game2048Screen
 import com.toolbox.app.tools.calculator.CalculatorScreen
-import com.toolbox.app.tools.coin.CoinFlipScreen
-import com.toolbox.app.tools.cointoss.CoinTossScreen
+import com.toolbox.app.tools.coin.CoinScreen
 import com.toolbox.app.tools.compass.CompassScreen
 import com.toolbox.app.tools.counter.CounterScreen
 import com.toolbox.app.tools.dates.DateCalculatorScreen
 import com.toolbox.app.tools.dice.DiceScreen
-import com.toolbox.app.tools.dicetoss.DiceTossScreen
 import com.toolbox.app.tools.eightball.EightBallScreen
 import com.toolbox.app.tools.fidget.FidgetSpinnerScreen
 import com.toolbox.app.tools.level.LevelScreen
@@ -102,14 +98,13 @@ enum class Tool(
     val keywords: List<String>,
     val screen: @Composable (onBack: () -> Unit) -> Unit,
 ) {
-    Coin("coin", "Flip a Coin", Icons.Filled.Contrast, GoogleColors.Yellow, Category.Decisions,
-        listOf("heads", "tails", "flip", "decide"), { CoinFlipScreen(it) }),
-    CoinToss("cointoss", "Coin Toss", Icons.Filled.Toll, GoogleColors.Blue, Category.Decisions,
-        listOf("heads", "tails", "physics", "throw", "flick", "swipe", "decide"), { CoinTossScreen(it) }),
-    Dice("dice", "Roll a Die", Icons.Filled.Casino, GoogleColors.Red, Category.Decisions,
-        listOf("dice", "roll", "d6", "d20", "board game"), { DiceScreen(it) }),
-    DiceToss("dicetoss", "Dice Toss", Icons.Filled.ViewInAr, GoogleColors.Green, Category.Decisions,
-        listOf("dice", "die", "roll", "throw", "physics", "swipe", "d6", "board game"), { DiceTossScreen(it) }),
+    Coin("coin", "Coin", Icons.Filled.Contrast, GoogleColors.Yellow, Category.Decisions,
+        listOf("heads", "tails", "flip", "toss", "coin toss", "flip a coin", "physics", "throw", "flick", "swipe", "decide"),
+        { CoinScreen(it) }),
+    Dice("dice", "Dice", Icons.Filled.Casino, GoogleColors.Green, Category.Decisions,
+        listOf("die", "roll", "roll a die", "dice toss", "throw", "physics", "swipe", "d4", "d6", "d8", "d10", "d12", "d20",
+            "board game"),
+        { DiceScreen(it) }),
     Spinner("spinner", "Spinner", ToolIcons.Spinner, GoogleColors.Green, Category.Decisions,
         listOf("wheel", "spin", "pick", "choose"), { SpinnerScreen(it) }),
     Random("random", "Random Number", Icons.Filled.Numbers, GoogleColors.Blue, Category.Decisions,
@@ -222,4 +217,8 @@ object Favourites {
         val current = parse(stored)
         return (if (route in current) current - route else current + route).joinToString(",")
     }
+
+    /** [stored] with routes renamed by [renames], keeping just one of any that end up the same. */
+    fun rename(stored: String, renames: Map<String, String>): String =
+        parse(stored).map { renames[it] ?: it }.distinct().joinToString(",")
 }

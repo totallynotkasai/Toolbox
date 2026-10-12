@@ -44,6 +44,10 @@ class Prefs(context: Context) {
         }
     }
 
+    fun contains(key: String) = prefs.contains(key)
+
+    fun remove(key: String) = prefs.edit { remove(key) }
+
     companion object {
         /** Shared by every screen with shake-to-decide. */
         const val SHAKE_ENABLED = "shake_enabled"

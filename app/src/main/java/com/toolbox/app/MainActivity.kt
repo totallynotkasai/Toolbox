@@ -33,6 +33,7 @@ import com.toolbox.app.home.HomeScreen
 import com.toolbox.app.tools.timer.TimerController
 import com.toolbox.app.tools.timer.TimerPhase
 import com.toolbox.app.ui.common.LocalToolRoute
+import com.toolbox.app.ui.common.Prefs
 import com.toolbox.app.ui.theme.ToolboxTheme
 
 /** Screens a notification may open through [MainActivity.EXTRA_OPEN], in release builds too. */
@@ -54,6 +55,7 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        Migrations.run(Prefs(this))
         // A Calculator recreated in landscape asks for free rotation again before its first frame, so the manifest's
         // portrait lock doesn't turn it back upright while the navigation state is still being restored.
         if (savedInstanceState?.getBoolean(FREE_ROTATION_KEY) == true) applyOrientation(free = true)
