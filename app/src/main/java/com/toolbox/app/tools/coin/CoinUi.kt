@@ -19,7 +19,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.rememberPref
 
-/** [CoinStats] persisted under [key], so each coin keeps its own counts across visits. */
+/** [CoinStats] persisted under [key], so the counts carry on across visits. */
 @Composable
 fun rememberCoinStats(key: String): MutableState<CoinStats> {
     val pref = rememberPref(key, "")
@@ -39,8 +39,9 @@ fun rememberCoinStats(key: String): MutableState<CoinStats> {
 fun CoinStatsPanel(stats: CoinStats, modifier: Modifier = Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Row(horizontalArrangement = Arrangement.spacedBy(40.dp)) {
-            Stat("Heads", stats.heads, stats.total)
-            Stat("Tails", stats.tails, stats.total)
+            val shares = stats.percentages()
+            Stat("Heads", stats.heads, shares?.first)
+            Stat("Tails", stats.tails, shares?.second)
         }
         Text(
             stats.streakText() ?: " ",
@@ -69,11 +70,11 @@ fun CoinStatsPanel(stats: CoinStats, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun Stat(label: String, value: Int, total: Int) {
+private fun Stat(label: String, value: Int, percent: Int?) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text("$value", style = MaterialTheme.typography.headlineMedium)
         Text(
-            if (total > 0) "$label · ${(100f * value / total).toInt()}%" else label,
+            if (percent != null) "$label · $percent%" else label,
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

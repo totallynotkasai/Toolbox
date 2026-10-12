@@ -1,15 +1,15 @@
-package com.toolbox.app.tools.coin
+package com.toolbox.app.ui.common
 
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * A 3×3 rotation (row-major) giving a coin's orientation in the world.
+ * A 3×3 rotation (row-major) giving a coin's or die's orientation in the world.
  *
  * World axes: x to the right, y up (height above the table), z towards the viewer.
- * The columns are where the coin's local axes point: u (design right), v (design up) and w (the heads-side normal).
- * Pure Kotlin so [com.toolbox.app.tools.cointoss.CoinPhysics] and its tests don't need Compose.
+ * The columns are where the body's local axes point; for a coin, u (design right), v (design up) and w (the
+ * heads-side normal). Pure Kotlin so the coin and dice physics and their tests don't need Compose.
  */
 class Rot(private val m: FloatArray) {
     operator fun get(row: Int, col: Int) = m[row * 3 + col]
@@ -39,34 +39,13 @@ class Rot(private val m: FloatArray) {
     )
 
     companion object {
-        val Identity = Rot(floatArrayOf(1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f))
-
         /** Rotation about the world x axis; a positive angle tips +y towards +z. */
         fun x(rad: Float): Rot {
             val c = cos(rad); val s = sin(rad)
             return Rot(floatArrayOf(1f, 0f, 0f, 0f, c, -s, 0f, s, c))
         }
 
-        /** Rotation about the world y (vertical) axis. */
-        fun y(rad: Float): Rot {
-            val c = cos(rad); val s = sin(rad)
-            return Rot(floatArrayOf(c, 0f, s, 0f, 1f, 0f, -s, 0f, c))
-        }
-
-        /** Rotation by [rad] about the horizontal axis at [heading] radians round from +x towards +z (Rodrigues). */
-        fun tilt(heading: Float, rad: Float): Rot {
-            val ax = cos(heading); val az = sin(heading)
-            val c = cos(rad); val s = sin(rad); val k = 1 - c
-            return Rot(
-                floatArrayOf(
-                    c + ax * ax * k, -az * s, ax * az * k,
-                    az * s, c, -ax * s,
-                    az * ax * k, ax * s, c + az * az * k,
-                ),
-            )
-        }
-
-        /** Lying flat, heads up, with the top of the design pointing away from the viewer. */
+        /** A coin lying flat, heads up, with the top of the design pointing away from the viewer. */
         val Rest = x(-(Math.PI / 2).toFloat())
     }
 }

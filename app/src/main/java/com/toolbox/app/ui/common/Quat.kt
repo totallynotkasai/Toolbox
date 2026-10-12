@@ -1,7 +1,8 @@
-package com.toolbox.app.tools.coin
+package com.toolbox.app.ui.common
 
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.acos
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
@@ -19,6 +20,22 @@ data class Quat(val w: Float, val x: Float, val y: Float, val z: Float) {
     fun normalized(): Quat {
         val l = sqrt(w * w + x * x + y * y + z * z)
         return Quat(w / l, x / l, y / l, z / l)
+    }
+
+    /** The rotation a fraction [t] of the way from this one to [o], turning the shorter way round. */
+    fun slerp(o: Quat, t: Float): Quat {
+        val dot = w * o.w + x * o.x + y * o.y + z * o.z
+        val b = if (dot < 0f) Quat(-o.w, -o.x, -o.y, -o.z) else o
+        val d = abs(dot)
+        if (d > 0.9995f) {
+            // Nearly the same: a straight blend is accurate and avoids dividing by a tiny sine.
+            return Quat(w + (b.w - w) * t, x + (b.x - x) * t, y + (b.y - y) * t, z + (b.z - z) * t).normalized()
+        }
+        val theta = acos(d)
+        val s = sin(theta)
+        val ka = sin((1 - t) * theta) / s
+        val kb = sin(t * theta) / s
+        return Quat(w * ka + b.w * kb, x * ka + b.x * kb, y * ka + b.y * kb, z * ka + b.z * kb)
     }
 
     /** Advances by angular velocity [omega] (world frame, rad/s) for [h] seconds. */

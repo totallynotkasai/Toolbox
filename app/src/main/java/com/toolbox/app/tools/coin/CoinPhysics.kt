@@ -1,9 +1,8 @@
-package com.toolbox.app.tools.cointoss
+package com.toolbox.app.tools.coin
 
-import com.toolbox.app.tools.coin.COIN_THICKNESS
-import com.toolbox.app.tools.coin.Quat
-import com.toolbox.app.tools.coin.Rot
-import com.toolbox.app.tools.coin.Vec3
+import com.toolbox.app.ui.common.Quat
+import com.toolbox.app.ui.common.Rot
+import com.toolbox.app.ui.common.Vec3
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -89,12 +88,24 @@ class CoinPhysics(
 
     fun pose(): Rot = rot
 
-    /** Keeps the coin on the table when it changes size (e.g. on rotation). */
+    /**
+     * Keeps the coin on the table when it changes size (e.g. on rotation). A size that isn't a real table (zero,
+     * infinite or NaN, from a stage squashed to nothing) is ignored, so it can't turn the coin's position into NaN.
+     */
     fun resize(halfWidth: Float, halfDepth: Float, ceiling: Float) {
+        if (!(halfWidth.isFinite() && halfDepth.isFinite() && ceiling.isFinite())) return
+        if (halfWidth <= 0f || halfDepth <= 0f || ceiling <= 0f) return
         this.halfWidth = halfWidth
         this.halfDepth = halfDepth
         this.ceiling = ceiling
         if (phase == Phase.Resting) position = clampToTable(position)
+    }
+
+    /** Turns a resting coin over, if need be, so it shows [heads]: to match a result from the other mode. */
+    fun lay(heads: Boolean) {
+        if (phase != Phase.Resting || heads == this.heads) return
+        this.heads = heads
+        setOrientation(Quat.axisAngle(X_AXIS, PI.toFloat()) * orientation)
     }
 
     /**

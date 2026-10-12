@@ -1,18 +1,13 @@
 package com.toolbox.app.tools.dice
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -25,7 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -33,184 +28,344 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.scale
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.toolbox.app.ui.common.OnShake
-import com.toolbox.app.ui.common.ToolBody
+import com.toolbox.app.ui.common.SteadyText
 import com.toolbox.app.ui.common.ToolScaffold
-import com.toolbox.app.ui.common.rememberHaptics
+import com.toolbox.app.ui.common.TossLayout
+import com.toolbox.app.ui.common.TossMode
+import com.toolbox.app.ui.common.TossModeToggle
+import com.toolbox.app.ui.common.TossTable
+import com.toolbox.app.ui.common.Vec3
+import com.toolbox.app.ui.common.rememberGameLoop
+import com.toolbox.app.ui.common.rememberPref
 import com.toolbox.app.ui.common.rememberShakeEnabled
-import com.toolbox.app.tools.coin.CoinColors
-import kotlinx.coroutines.delay
+import com.toolbox.app.ui.common.rememberToneSynth
+import com.toolbox.app.ui.common.rememberTossMode
+import com.toolbox.app.ui.common.rememberVibes
+import com.toolbox.app.ui.common.shakePower
+import com.toolbox.app.ui.common.swipePower
 import kotlinx.coroutines.launch
-import kotlin.math.PI
-import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.max
 import kotlin.math.sin
 import kotlin.random.Random
 
-private val DIE_TYPES = listOf(4, 6, 8, 10, 12, 20)
+/** The die type and how many, shared by both modes. They were Dice Toss's `dicetoss_` settings. */
+const val DICE_COUNT_KEY = "dice_count"
+const val DICE_SIDES_KEY = "dice_sides"
 
+private const val MAX_DICE = 6
+
+/** Quick looks nearly straight down on the dice; Throw looks across the table at an angle. */
+private const val QUICK_ELEVATION = 80f
+private const val THROW_ELEVATION = 58f
+
+/** How long Quick's tumble takes. */
+private const val QUICK_MS = 800
+
+/** How close to a die (in die radii) a touch picks them up. */
+private const val GRAB_REACH = 1.4f
+
+/**
+ * Dice, in two modes. Quick picks the numbers straight away and the dice tumble where they sit to land on them.
+ * Throw is a physics table: swipe across it to throw the dice (harder goes further and spins more), or pick them up
+ * and flick them, and the numbers come out of the simulation. The die type and count are shared, and the dice show
+ * the same numbers in both modes. They use the same colours as the coin.
+ */
 @Composable
 fun DiceScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
-    val haptics = rememberHaptics()
-    var sides by rememberSaveable { mutableIntStateOf(6) }
-    var count by rememberSaveable { mutableIntStateOf(1) }
-    var values by rememberSaveable { mutableStateOf(listOf(6)) }
-    var rolling by remember { mutableStateOf(false) }
-    val wobble = remember { Animatable(0f) }
+    val vibes = rememberVibes()
+    val synth = rememberToneSynth()
+    var count by rememberPref(DICE_COUNT_KEY, 2)
+    var sides by rememberPref(DICE_SIDES_KEY, 6)
+    var mode by rememberTossMode("dice_mode")
+    // The last roll, shared by both modes; null while the dice are moving, or after changing them. It's saved, and
+    // the dice are laid out showing it again, so a recreated screen still matches what it says.
+    var result by rememberSaveable { mutableStateOf<List<Int>?>(null) }
+    val startCount = count.coerceIn(1, MAX_DICE)
+    val startSides = sides.takeIf { it in DieShape.SIDES } ?: 6
+
+    // Quick: the numbers are picked, then the dice tumble onto them as progress runs 0 to 1.
+    val quick = remember { QuickDice(System.nanoTime(), startCount, startSides).also { q -> result?.let(q::show) } }
+    val progress = remember { Animatable(1f) }
+    var tumbling by remember { mutableStateOf(false) }
+
+    // Throw: the physics dice.
+    val physics = remember { DicePhysics(System.nanoTime(), startCount, startSides).also { p -> result?.let(p::show) } }
+    var frame by remember { mutableLongStateOf(0L) } // bumped every simulated frame, or change of dice, to redraw
+    var rolling by remember { mutableStateOf(false) } // off the table: held or rolling
+    var held by remember { mutableStateOf(false) }
+
+    val busy = tumbling || rolling
+
+    val loop = rememberGameLoop { dt ->
+        if (physics.phase == DicePhysics.Phase.Resting) return@rememberGameLoop false
+        for (e in physics.step(dt)) when (e) {
+            is DicePhysics.Event.Knock -> {
+                synth.knock(e.intensity)
+                // Hard landings thump; the little knocks as they tumble to a stop tick.
+                if (e.intensity > 0.3f) vibes.thud(0.3f + 0.7f * e.intensity) else vibes.tick(0.25f + e.intensity)
+            }
+            is DicePhysics.Event.Settled -> vibes.click(0.35f)
+        }
+        frame++
+        if (physics.phase != DicePhysics.Phase.Resting) return@rememberGameLoop true
+        result = physics.values
+        rolling = false
+        false
+    }
 
     fun roll() {
-        if (rolling) return
-        rolling = true
+        if (tumbling) return
+        tumbling = true
+        result = null // so a repeat result is still a change, and TalkBack reads it out
+        vibes.click(0.45f)
+        val values = quick.roll()
         scope.launch {
-            launch { wobble.snapTo(0f); wobble.animateTo(1f, tween(650)) }
-            // Tumble through random faces, slowing down, then settle.
-            listOf(40L, 50L, 60L, 80L, 100L, 130L, 170L).forEach {
-                values = List(count) { Random.nextInt(1, sides + 1) }
-                haptics.tick()
-                delay(it)
-            }
-            values = List(count) { Random.nextInt(1, sides + 1) }
-            haptics.heavy()
-            rolling = false
+            progress.snapTo(0f)
+            progress.animateTo(1f, tween(QUICK_MS, easing = LinearEasing))
+            result = values
+            synth.knock(0.6f)
+            vibes.thud(0.6f)
+            tumbling = false
         }
+    }
+
+    fun toss(power: Float, dirX: Float, dirZ: Float) {
+        if (!physics.toss(power, dirX, dirZ)) return // still rolling
+        result = null
+        held = false
+        vibes.click(0.45f)
+        rolling = true
+        loop.wake()
+    }
+
+    fun grab(): Boolean {
+        if (!physics.grab()) return false
+        result = null
+        held = true
+        vibes.tick(0.6f)
+        rolling = true
+        loop.wake()
+        return true
+    }
+
+    fun drop() {
+        if (physics.drop()) held = false
+    }
+
+    fun changeCount(n: Int) {
+        if (busy || n !in 1..MAX_DICE) return
+        count = n
+        physics.setCount(n)
+        quick.setCount(n)
+        result = null
+        frame++
+    }
+
+    fun changeSides(n: Int) {
+        if (busy || n == physics.shape.sides) return
+        sides = n
+        physics.setSides(n)
+        quick.setSides(n)
+        result = null
+        vibes.tick(0.4f)
+        frame++
+    }
+
+    /** The dice show the same numbers in both modes, so the result on screen always matches them. */
+    fun switchTo(m: TossMode) {
+        if (busy || m == mode) return
+        if (m == TossMode.Quick) quick.show(physics.values) else physics.show(quick.values)
+        frame++
+        mode = m
     }
 
     val shake = rememberShakeEnabled()
-    OnShake(shake.value) { roll() } // roll() ignores shakes mid-roll
+    OnShake(shake.value) { strength ->
+        if (mode == TossMode.Quick) roll() // roll() ignores shakes mid-roll
+        else toss(shakePower(strength), Random.nextFloat() - 0.5f, -1f)
+    }
 
     ToolScaffold(
-        title = "Roll a Die",
+        title = "Dice",
         onBack = onBack,
     ) { padding ->
-        ToolBody(padding) {
+        val showing = when {
+            busy -> null
+            mode == TossMode.Quick -> quick.values
+            else -> physics.values
+        }
+        val described = showing?.let { "Dice showing ${it.joinToString(", ")}" } ?: "Dice rolling"
+        TossLayout(
+            padding = padding,
+            toggle = { TossModeToggle(mode, ::switchTo, enabled = !busy) },
+            stage = { modifier ->
+                if (mode == TossMode.Quick) {
+                    TossTable(
+                        description = "$described. Tap to roll",
+                        tapLabel = "Roll the dice",
+                        onSize = {},
+                        onTap = ::roll,
+                        onFling = { _, _ -> roll() },
+                        modifier = modifier,
+                    ) {
+                        if (frame < 0) return@TossTable // reading frame redraws after changing the dice
+                        val view = quickView(quick, size.width, size.height, this)
+                        drawDice(quick.dice(progress.value), view)
+                    }
+                } else {
+                    DiceTable(
+                        physics = physics,
+                        frame = frame,
+                        description = "$described. Swipe to throw",
+                        onTap = { toss(0.25f + Random.nextFloat() * 0.15f, Random.nextFloat() * 0.4f - 0.2f, -1f) },
+                        onToss = ::toss,
+                        onGrab = ::grab,
+                        onDrop = ::drop,
+                        modifier = modifier,
+                    )
+                }
+            },
+        ) {
+            val values = result
+            val headline = when {
+                held -> "Flick to throw"
+                busy -> ""
+                values == null -> if (mode == TossMode.Quick) "Tap the dice to roll" else "Swipe to throw"
+                values.size == 1 -> "${values[0]}"
+                else -> "Total ${values.sum()}"
+            }
+            SteadyText(
+                headline,
+                style = if (values != null && !busy) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.titleMedium,
+                reserve = MaterialTheme.typography.headlineMedium,
+                // On the box, not just the text inside, so TalkBack reads each new result out, with every number.
+                modifier = Modifier.clearAndSetSemantics {
+                    contentDescription = when {
+                        values == null || busy -> headline
+                        values.size == 1 -> "Rolled ${values[0]}"
+                        else -> "Rolled ${values.joinToString(", ")}. Total ${values.sum()}"
+                    }
+                    liveRegion = LiveRegionMode.Polite
+                },
+            )
+            SteadyText(
+                when {
+                    held -> "Drag to move them. Let go to drop them"
+                    busy -> ""
+                    values != null && values.size > 1 -> values.joinToString("  +  ")
+                    values != null -> ""
+                    mode == TossMode.Quick -> if (shake.value) "Or shake the phone, or press Roll" else "Or press Roll"
+                    else -> "Harder goes further. Or pick them up and flick"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                lines = 2,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(12.dp))
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DIE_TYPES.forEach { s ->
+                DieShape.SIDES.forEach { n ->
                     FilterChip(
-                        selected = sides == s,
-                        onClick = { sides = s; values = List(count) { s } },
-                        label = { Text("d$s") },
+                        selected = sides == n,
+                        onClick = { changeSides(n) },
+                        enabled = !busy,
+                        label = { Text("d$n") },
                     )
                 }
             }
-            Spacer(Modifier.height(32.dp))
-
-            val dieSize: Dp = if (count <= 2) 120.dp else 88.dp
-            Column(
-                Modifier.height(280.dp).clickable(enabled = !rolling) { roll() },
-                verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                values.chunked(3).forEachIndexed { row, chunk ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        chunk.forEachIndexed { i, v ->
-                            val idx = row * 3 + i
-                            val spin = sin(wobble.value * PI * 3).toFloat() * 25f * (1f - wobble.value)
-                            Die(
-                                sides = sides,
-                                value = v,
-                                size = dieSize,
-                                modifier = Modifier.graphicsLayer {
-                                    rotationZ = if (idx % 2 == 0) spin else -spin
-                                    translationY = -40f * sin(wobble.value * PI).toFloat()
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(16.dp))
-            Text(
-                if (count > 1) "Total ${values.sum()}" else " ",
-                style = MaterialTheme.typography.headlineMedium,
-            )
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                FilledTonalIconButton(onClick = { if (count > 1) { count--; values = values.take(count) } }) {
+                FilledTonalIconButton(onClick = { changeCount(count - 1) }, enabled = !busy && count > 1) {
                     Icon(Icons.Filled.Remove, contentDescription = "Fewer dice")
                 }
                 Text("$count ${if (count == 1) "die" else "dice"}", style = MaterialTheme.typography.titleMedium)
-                FilledTonalIconButton(onClick = { if (count < 6) { count++; values = values + sides } }) {
+                FilledTonalIconButton(onClick = { changeCount(count + 1) }, enabled = !busy && count < MAX_DICE) {
                     Icon(Icons.Filled.Add, contentDescription = "More dice")
                 }
             }
-            Spacer(Modifier.height(24.dp))
-            Button(onClick = ::roll, enabled = !rolling) { Text("Roll") }
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick = {
+                    if (mode == TossMode.Quick) roll()
+                    else toss(0.45f + Random.nextFloat() * 0.35f, Random.nextFloat() * 0.5f - 0.25f, -1f)
+                },
+                enabled = !busy,
+            ) { Text(if (mode == TossMode.Quick) "Roll" else "Throw") }
         }
     }
 }
 
+/** Quick's view: the rows of dice filling the middle of the stage, but never bigger than a large die. */
+private fun quickView(quick: QuickDice, width: Float, height: Float, density: Density): DiceView = with(density) {
+    val s = minOf(width / (2 * quick.halfWidth + 1f), height / (2 * quick.halfDepth + 1.4f), 90.dp.toPx())
+    DiceView(QUICK_ELEVATION, width / 2f, height / 2f, s)
+}
+
+/** How Throw's table fits a canvas of [size]: dice small enough that five fit across and the whole table shows. */
+private fun tableView(size: IntSize, density: Density): DiceView = with(density) {
+    val s = minOf(size.width / 6.5f, size.height / 9f, 64.dp.toPx())
+    // Leave room above the far wall for a die in the air, and a little below the near wall.
+    DiceView(THROW_ELEVATION, size.width / 2f, s * 1.6f + halfDepth(size, s) * SIN_ELEVATION * s, s)
+}
+
+private val SIN_ELEVATION = sin(Math.toRadians(THROW_ELEVATION.toDouble())).toFloat()
+
+private fun halfDepth(size: IntSize, scale: Float) = max(1.5f, (size.height / scale - 2.4f) / (2 * SIN_ELEVATION))
+
+/** Throw's table: the physics dice, which can be swiped, tapped, or picked up, dragged and flicked. */
 @Composable
-private fun Die(sides: Int, value: Int, size: Dp, modifier: Modifier = Modifier) {
-    Box(modifier.size(size), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.size(size)) {
-            val s = this.size.minDimension
-            if (sides == 6) {
-                // Coin colours: a darker rim round a lighter face, with ink pips.
-                drawRoundRect(CoinColors.Rim, cornerRadius = CornerRadius(s * 0.18f))
-                val inset = s * 0.06f
-                drawRoundRect(
-                    CoinColors.Face, topLeft = Offset(inset, inset), size = Size(s - 2 * inset, s - 2 * inset),
-                    cornerRadius = CornerRadius(s * 0.13f),
-                )
-                drawPips(value)
-            } else {
-                drawPath(polygonFor(sides, s), CoinColors.Rim)
-                scale(0.84f, Offset(s / 2, s / 2)) { drawPath(polygonFor(sides, s), CoinColors.Face) }
-            }
-        }
-        if (sides != 6) {
-            Text(
-                "$value",
-                color = CoinColors.Ink,
-                fontWeight = FontWeight.Bold,
-                fontSize = (size.value * 0.3f).sp,
-                modifier = if (sides == 4) Modifier.padding(top = size * 0.22f) else Modifier,
-            )
-        }
-    }
-}
-
-private fun DrawScope.drawPips(value: Int) {
-    val s = size.minDimension
-    val r = s * 0.085f
-    val a = s * 0.27f; val m = s * 0.5f; val b = s * 0.73f
-    val pts = when (value) {
-        1 -> listOf(m to m)
-        2 -> listOf(a to a, b to b)
-        3 -> listOf(a to a, m to m, b to b)
-        4 -> listOf(a to a, b to a, a to b, b to b)
-        5 -> listOf(a to a, b to a, m to m, a to b, b to b)
-        else -> listOf(a to a, b to a, a to m, b to m, a to b, b to b)
-    }
-    pts.forEach { (x, y) -> drawCircle(CoinColors.Ink, r, Offset(x, y)) }
-}
-
-/** Flat silhouettes that read as the right die at a glance: triangle, diamond, pentagon, hexagon... */
-private fun polygonFor(sides: Int, s: Float): Path {
-    val corners = when (sides) { 4 -> 3; 8 -> 4; 10 -> 4; 12 -> 5; else -> 6 }
-    val c = s / 2
-    val r = s * 0.5f
-    return Path().apply {
-        for (i in 0 until corners) {
-            val angle = -PI / 2 + 2 * PI * i / corners
-            // d10 is a squashed kite so it differs from the d8 diamond.
-            val rx = if (sides == 10) r * 0.72f else r
-            val x = c + rx * cos(angle).toFloat()
-            val y = c + r * sin(angle).toFloat() * (if (corners == 3) 1.1f else 1f) + (if (corners == 3) s * 0.08f else 0f)
-            if (i == 0) moveTo(x, y) else lineTo(x, y)
-        }
-        close()
+private fun DiceTable(
+    physics: DicePhysics,
+    frame: Long,
+    description: String,
+    onTap: () -> Unit,
+    onToss: (power: Float, dirX: Float, dirZ: Float) -> Unit,
+    onGrab: () -> Boolean,
+    onDrop: () -> Unit,
+    modifier: Modifier,
+) {
+    val density = LocalDensity.current
+    var view by remember { mutableStateOf<DiceView?>(null) }
+    var holdFrom by remember { mutableStateOf(Vec3.Zero) } // where the handful was when they were picked up
+    TossTable(
+        description = description,
+        tapLabel = "Throw the dice",
+        onSize = {
+            val v = tableView(it, density)
+            view = v
+            physics.resize(it.width / 2f / v.scale, halfDepth(it, v.scale))
+        },
+        onTap = onTap,
+        // Any direction works: the dice go the way the finger went (screen up is away across the table).
+        onFling = { vx, vUp ->
+            val speed = hypot(vx, vUp)
+            onToss(swipePower(speed), vx / speed, -vUp / speed)
+        },
+        // Pressing on any resting die picks them all up; anywhere else starts a swipe.
+        onPress = { at ->
+            val v = view
+            val reach = (v?.scale ?: 0f) * physics.shape.radius * GRAB_REACH
+            val onDie = v != null && physics.dice.any { (at - v.point(it.position)).getDistance() < reach }
+            onDie && onGrab().also { if (it) holdFrom = physics.handPosition }
+        },
+        // They follow the finger over the table: up the screen is away, across the table.
+        onDrag = { moved ->
+            view?.let { v -> physics.hold(holdFrom.x + moved.x / v.scale, holdFrom.z + moved.y / (v.scale * v.sinA)) }
+        },
+        onPutDown = onDrop,
+        modifier = modifier,
+    ) {
+        if (frame < 0) return@TossTable // reading frame makes every simulated step redraw
+        drawDice(physics.dice, tableView(IntSize(size.width.toInt(), size.height.toInt()), this))
     }
 }

@@ -1,8 +1,8 @@
-package com.toolbox.app.tools.dicetoss
+package com.toolbox.app.tools.dice
 
-import com.toolbox.app.tools.coin.Quat
-import com.toolbox.app.tools.coin.Rot
-import com.toolbox.app.tools.coin.Vec3
+import com.toolbox.app.ui.common.Quat
+import com.toolbox.app.ui.common.Rot
+import com.toolbox.app.ui.common.Vec3
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -39,8 +39,8 @@ class DicePhysics(
         data class Settled(val values: List<Int>) : Event
     }
 
-    class Die internal constructor(val shape: DieShape, p: Vec3, q: Quat) {
-        var position = p; internal set
+    class Die internal constructor(override val shape: DieShape, p: Vec3, q: Quat) : DieLook {
+        override var position = p; internal set
         var orientation = q; internal set
         internal var v = Vec3.Zero
         internal var w = Vec3.Zero
@@ -52,7 +52,7 @@ class DicePhysics(
 
         /** The number showing: on the top face, or a d4's top corner. */
         val value: Int get() = shape.value(orientation.toRot())
-        fun pose(): Rot = orientation.toRot()
+        override fun pose(): Rot = orientation.toRot()
     }
 
     private class Contact(
@@ -80,20 +80,20 @@ class DicePhysics(
 
     val values: List<Int> get() = dice.map { it.value }
 
+    /** The dice are still in the rows [arrange] put them in, not wherever a throw left them. */
+    private var tidy = true
+
     init { setCount(count) }
 
-    /** Lays [n] dice out in a row near the thrower, on random faces. Ignored mid-roll. */
+    /** Lays [n] dice out in rows near the thrower, on random faces. Ignored mid-roll. */
     fun setCount(n: Int) {
         if (phase != Phase.Resting) return
-        val size = shape.radius
-        val spacing = min(1.85f * size, (2 * halfWidth - 1.4f * size) / max(1, n))
-        dice = List(n) { i ->
-            val x = (i - (n - 1) / 2f) * spacing
+        dice = List(n) {
             val face = shape.faces[random.nextInt(shape.faces.size)]
             val flat = Quat.between(face.normal, DOWN)
-            val yaw = Quat.axisAngle(UP, (random.nextFloat() - 0.5f) * 0.8f)
-            Die(shape, Vec3(x, shape.inradius, max(0f, halfDepth - 1.6f * size)), (yaw * flat).normalized())
+            Die(shape, Vec3.Zero, (Quat.axisAngle(UP, randomYaw()) * flat).normalized())
         }
+        arrange()
     }
 
     /** Swaps every die for one with [sides] faces (4, 6, 8, 10, 12 or 20). Ignored mid-roll. */
@@ -103,10 +103,48 @@ class DicePhysics(
         setCount(dice.size)
     }
 
-    /** Keeps resting dice on the table when it changes size (e.g. on rotation). */
+    /**
+     * Lays the resting dice out in rows showing [values], one per die (and as many dice as that): a result from the
+     * other mode, or the last roll after the screen is recreated. Ignored mid-roll.
+     */
+    fun show(values: List<Int>) {
+        if (phase != Phase.Resting || values.isEmpty()) return
+        if (values.size != dice.size) setCount(values.size)
+        for ((d, v) in dice.zip(values)) d.orientation = shape.restingOn(v, randomYaw())
+        arrange()
+    }
+
+    /** A slight random turn, so dice laid out in rows don't look machine-placed. */
+    private fun randomYaw() = (random.nextFloat() - 0.5f) * 0.8f
+
+    /**
+     * Puts the resting dice in tidy rows near the thrower (see [diceRows]). They're spaced by their full width, so
+     * however they're turned they can't overlap.
+     */
+    private fun arrange() {
+        val r = shape.radius
+        val spots = diceRows(dice.size, 2 * r + ROW_GAP, 2 * (halfWidth - 1.1f * r))
+        val front = max(0f, halfDepth - 1.6f * r)
+        val back = max(0f, halfDepth - r)
+        // The first row furthest back (the top of the screen), so the dice read in the order of [values], like text.
+        val depth = -(spots.minOfOrNull { it.z } ?: 0f)
+        for ((d, s) in dice.zip(spots)) d.position = Vec3(s.x, shape.inradius, (front - depth - s.z).coerceAtLeast(-back))
+        tidy = true
+    }
+
+    /**
+     * Keeps resting dice on the table when it changes size (e.g. on rotation); dice still in their rows are laid out
+     * again for the new size. A size that isn't a real table (zero, infinite or NaN, from a stage squashed to nothing)
+     * is ignored, so it can't turn the dice's positions into NaN.
+     */
     fun resize(halfWidth: Float, halfDepth: Float) {
+        if (!(halfWidth.isFinite() && halfDepth.isFinite()) || halfWidth <= 0f || halfDepth <= 0f) return
         this.halfWidth = halfWidth
         this.halfDepth = halfDepth
+        if (phase == Phase.Resting && tidy) {
+            arrange()
+            return
+        }
         for (d in dice) {
             val lx = max(0f, halfWidth - shape.radius); val lz = max(0f, halfDepth - shape.radius)
             d.position = Vec3(d.position.x.coerceIn(-lx, lx), d.position.y, d.position.z.coerceIn(-lz, lz))
@@ -151,6 +189,7 @@ class DicePhysics(
             d.w = randomUnit() * (1f + random.nextFloat())
         }
         accumulator = 0f
+        tidy = false
         phase = Phase.Held
         return true
     }
@@ -175,6 +214,7 @@ class DicePhysics(
     }
 
     private fun startRolling() {
+        tidy = false
         for (d in dice) {
             d.asleep = false
             d.sleepTime = 0f
@@ -491,6 +531,8 @@ class DicePhysics(
         const val COCKED = 0.14f
         const val NUDGE_SPIN = 5f
         const val NUDGE_HOP = 1.2f
+        /** The space between dice laid out in rows, on top of their full width. */
+        const val ROW_GAP = 0.15f
         /** Mass 1; the moment of inertia depends on the solid (see [DieShape.invInertia]). */
         const val INV_MASS = 1f
 

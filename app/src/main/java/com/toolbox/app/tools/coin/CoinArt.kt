@@ -1,7 +1,6 @@
 package com.toolbox.app.tools.coin
 
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Path
@@ -12,6 +11,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.lerp
+import com.toolbox.app.ui.common.Rot
+import com.toolbox.app.ui.common.TOSS_LIGHT
+import com.toolbox.app.ui.common.TossColors
+import com.toolbox.app.ui.common.Vec3
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.max
@@ -32,27 +35,13 @@ class CoinCamera(elevationDeg: Float) {
     fun project(v: Vec3) = Offset(v.x, -(v dot up))
 }
 
-/** Light from the upper left, above the table. */
-internal val LIGHT = Vec3(-0.45f, 0.8f, 0.45f).normalized()
-
-/** Flat periwinkle palette, shared with the dice so the chance tools match. */
-object CoinColors {
-    val Rim = Color(0xFF7D7FE3)
-    val Face = Color(0xFF9A9CF4)
-    val Dots = Color(0xFFE4E4FF)
-    val Ink = Color(0xFF3C3A9E)
-    val Shade = Color(0xFF2A2870)
-    val EdgeHi = Color(0xFFA9ABFA)
-    val EdgeLo = Color(0xFF4E50B8)
-}
-
-private val RIM = CoinColors.Rim
-private val FACE = CoinColors.Face
-private val DOTS = CoinColors.Dots
-private val INK = CoinColors.Ink
-private val SHADE = CoinColors.Shade
-private val EDGE_HI = CoinColors.EdgeHi
-private val EDGE_LO = CoinColors.EdgeLo
+private val RIM = TossColors.Rim
+private val FACE = TossColors.Face
+private val DOTS = TossColors.Dots
+private val INK = TossColors.Ink
+private val SHADE = TossColors.Shade
+private val EDGE_HI = TossColors.EdgeHi
+private val EDGE_LO = TossColors.EdgeLo
 
 /** Proportions, as a fraction of the coin's radius. */
 const val COIN_THICKNESS = 0.14f
@@ -101,7 +90,7 @@ class CoinArt {
             if ((radial dot camera.toViewer) <= 0f) continue
             val p0 = center + pu * cos(s0) + pv * sin(s0)
             val p1 = center + pu * cos(s1) + pv * sin(s1)
-            val lit = 0.25f + 0.75f * max(0f, radial dot LIGHT)
+            val lit = 0.25f + 0.75f * max(0f, radial dot TOSS_LIGHT)
             val reed = if (i % 2 == 0) 1f else 0.85f
             scratch.reset()
             scratch.moveTo((p0 - half).x, (p0 - half).y)
@@ -123,7 +112,7 @@ class CoinArt {
                 c.x, c.y, 0f, 1f,
             ),
         )
-        val brightness = 0.7f + 0.3f * max(0f, n dot LIGHT)
+        val brightness = 0.7f + 0.3f * max(0f, n dot TOSS_LIGHT)
         withTransform({ transform(m) }) { drawFace(headsUp, brightness) }
     }
 
@@ -161,28 +150,5 @@ class CoinArt {
                 drawLine(ink, Offset(0f, 38f), Offset(0f, 64f), 5f, StrokeCap.Round)
             }
         }
-    }
-}
-
-/**
- * A soft shadow on the table under a coin: an ellipse [rx] by [ry] that fades and blurs as [height] (0 on the table,
- * 1 at the top of a big throw) rises, and is sharpest on landing.
- */
-fun DrawScope.drawCoinShadow(center: Offset, rx: Float, ry: Float, height: Float) {
-    val h = height.coerceIn(0f, 1f)
-    val alpha = 0.34f * (1f - 0.7f * h)
-    val core = 0.72f - 0.6f * h
-    withTransform({ scale(1f, ry / rx, center) }) {
-        drawCircle(
-            Brush.radialGradient(
-                0f to Color.Black.copy(alpha = alpha),
-                core to Color.Black.copy(alpha = alpha * 0.75f),
-                1f to Color.Transparent,
-                center = center,
-                radius = rx,
-            ),
-            rx,
-            center,
-        )
     }
 }

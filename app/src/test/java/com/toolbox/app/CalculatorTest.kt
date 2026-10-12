@@ -172,6 +172,17 @@ class FavouritesTest {
         assertEquals(setOf("a", "b"), Favourites.parse(" a,,b,a, "))
     }
 
+    @Test fun theMergedCoinAndDiceToolsTakeOverTheOldFavourites() {
+        val renames = Migrations.MERGED_ROUTES
+        assertEquals("coin,snake,dice", Favourites.rename("cointoss,snake,dicetoss", renames))
+        assertEquals("coin,dice", Favourites.rename("coin,cointoss,dice,dicetoss", renames)) // just one of each
+        assertEquals("timer", Favourites.rename("timer", renames))
+        assertEquals("", Favourites.rename("", renames))
+        // The old routes are gone and the new ones are real tools.
+        assertTrue(renames.keys.none { Tool.byRoute(it) != null })
+        assertTrue(renames.values.all { Tool.byRoute(it) != null })
+    }
+
     @Test fun everyToolHasAUniqueRouteAndIsSortedByTitle() {
         assertEquals(Tool.entries.size, Tool.entries.map { it.route }.toSet().size)
         val titles = Tool.sorted.map { it.title.lowercase() }

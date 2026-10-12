@@ -1,7 +1,9 @@
 package com.toolbox.app.tools.coin
 
+import kotlin.math.roundToInt
+
 /**
- * Running heads/tails statistics shared by both coin screens (each stores its own copy).
+ * Running heads/tails statistics for the Coin, shared by its Quick and Throw modes.
  * [history] holds the last [HISTORY_MAX] results, oldest first, as 'H'/'T'; [streak] is the length of the current run,
  * which can be longer than the history.
  */
@@ -25,6 +27,25 @@ data class CoinStats(val heads: Int = 0, val tails: Int = 0, val streak: Int = 0
     fun streakText(): String? {
         val face = streakHeads ?: return null
         return if (streak < 2) null else "$streak ${if (face) "heads" else "tails"} in a row"
+    }
+
+    /**
+     * Heads and tails as whole percentages that add up to 100 (tails takes what heads leaves, so a half can't be
+     * rounded up on both sides), or null before the first result.
+     */
+    fun percentages(): Pair<Int, Int>? {
+        if (total == 0) return null
+        val h = (100.0 * heads / total).roundToInt()
+        return h to 100 - h
+    }
+
+    /**
+     * These counts and [other]'s together, for merging the two old coin tools. Neither recorded when its results
+     * came, so the run and the history are taken from whichever was used more.
+     */
+    fun combine(other: CoinStats): CoinStats {
+        val recent = if (other.total > total) other else this
+        return CoinStats(heads + other.heads, tails + other.tails, recent.streak, recent.history)
     }
 
     fun encode() = "$heads,$tails,$streak,$history"
