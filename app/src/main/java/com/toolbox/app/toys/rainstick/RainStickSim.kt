@@ -2,6 +2,7 @@ package com.toolbox.app.toys.rainstick
 
 import kotlin.math.ceil
 import kotlin.math.cos
+import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -63,6 +64,13 @@ internal class RainStickSim(val count: Int = GRAINS, seed: Int = 7) {
             x[i] = 0.04f + (i % perRow) * 0.042f + rng.nextFloat() * 0.01f
             y[i] = LENGTH - GRAIN_R - 0.005f - (i / perRow) * 0.038f
         }
+    }
+
+    /** The fastest grain's speed in tube widths/s: close to zero once everything has settled. */
+    fun fastest(): Float {
+        var most = 0f
+        for (i in 0 until count) most = max(most, vx[i] * vx[i] + vy[i] * vy[i])
+        return sqrt(most)
     }
 
     /** Advances [dt] seconds under gravity ([gx], [gy]) in tube units/s², in tube coordinates. */
@@ -210,6 +218,8 @@ internal class RainStickSim(val count: Int = GRAINS, seed: Int = 7) {
         const val GRAINS = 200
         const val SHADES = 7
         const val MAX_HITS = 64
+        /** Below this ([fastest]), with no collisions, the grains are at rest. */
+        const val SETTLED_SPEED = 0.05f
 
         const val TYPE_PEG = 0
         const val TYPE_GRAIN = 1

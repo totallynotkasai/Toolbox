@@ -14,14 +14,12 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
@@ -41,8 +39,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.rememberGameLoop
 import com.toolbox.app.ui.common.rememberPcmStream
 import com.toolbox.app.ui.common.rememberVibes
+import com.toolbox.app.ui.common.smoothstep
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -54,6 +54,7 @@ import kotlin.math.sin
 
 private const val STROKE_GAIN = 0.42f // purr gained per cat-width stroked the right way
 private const val WRONG_WAY = 0.12f   // cat-widths of backwards stroke before it objects
+private const val IDLE_FRAME_GAP_MS = 25L // left alone, about 30 frames a second
 
 /**
  * How the cat feels. Distances are in fractions of the cat's drawn width; positive dx runs head → tail.
@@ -116,6 +117,7 @@ private class CatAnim {
     var tail = 0f   // 0..1 phase
     var chirp = 0f  // 1 on a head tap, fading to 0
     var brush = 0f  // 0..1 stroking speed, decays quickly
+    var touching = false // a finger is on the cat
 
     fun advance(dt: Float, mood: CatMood) {
         // Resting breaths are slow; a purring cat breathes every ~1.8 s.
@@ -124,6 +126,9 @@ private class CatAnim {
         chirp = max(0f, chirp - dt / 0.7f)
         brush *= exp(-dt * 7f)
     }
+
+    /** Being stroked, or still reacting to it: worth every display frame. */
+    fun lively(mood: CatMood) = touching || brush > 0.02f || chirp > 0f || mood.grumble > 0f
 }
 
 // A warm ginger tabby.
@@ -142,28 +147,25 @@ private const val LINE = 0.008f // outline width, in cat-widths
 fun CatScreen(onBack: () -> Unit) {
     val mood = remember { CatMood() }
     val anim = remember { CatAnim() }
-    var clock by remember { mutableFloatStateOf(0f) }
+    var time by remember { mutableFloatStateOf(0f) }
     var hasStroked by rememberSaveable { mutableStateOf(false) }
     val hintAlpha by animateFloatAsState(if (hasStroked) 0f else 1f, label = "hint")
     val audio = rememberPcmStream { CatAudio() }
     val vibes = rememberVibes()
 
     // Frame loop: moods and clocks tick, the purr is handed to the synth, and the motor rumbles with each breath.
-    LaunchedEffect(Unit) {
-        var last = 0L
-        while (true) {
-            withFrameNanos { now ->
-                val dt = if (last == 0L) 0f else ((now - last) / 1e9f).coerceAtMost(0.05f)
-                last = now
-                clock += dt
-                mood.update(dt)
-                anim.advance(dt, mood)
-                audio.purr = mood.purr
-                audio.breath = anim.breath
-                audio.brush = anim.brush
-                vibes.buzz(purrVibration(mood.purr, purrEnvelope(anim.breath)))
-            }
-        }
+    // The cat never stops breathing, so the loop never idles, but left alone it only drifts, and about 30 frames a
+    // second is plenty for that.
+    val loop = rememberGameLoop { dt ->
+        time += dt
+        mood.update(dt)
+        anim.advance(dt, mood)
+        audio.purr = mood.purr
+        audio.breath = anim.breath
+        audio.brush = anim.brush
+        vibes.buzz(purrVibration(mood.purr, purrEnvelope(anim.breath)))
+        frameGapMs = if (anim.lively(mood)) 0L else IDLE_FRAME_GAP_MS
+        true
     }
 
     ToolScaffold(title = "Purring Cat", onBack = onBack) { padding ->
@@ -174,7 +176,14 @@ fun CatScreen(onBack: () -> Unit) {
                     .fillMaxWidth()
                     .aspectRatio(1.25f)
                     .pointerInput(Unit) {
-                        detectTapGestures { pos ->
+                        detectTapGestures(
+                            onPress = {
+                                anim.touching = true
+                                loop.wake()
+                                tryAwaitRelease()
+                                anim.touching = false
+                            },
+                        ) { pos ->
                             val u = size.width.toFloat()
                             val hx = pos.x / u - 0.26f
                             val hy = pos.y / u - 0.37f
@@ -187,7 +196,13 @@ fun CatScreen(onBack: () -> Unit) {
                     }
                     .pointerInput(Unit) {
                         detectDragGestures(
-                            onDragStart = { mood.startStroke() },
+                            onDragStart = {
+                                mood.startStroke()
+                                anim.touching = true
+                                loop.wake()
+                            },
+                            onDragEnd = { anim.touching = false },
+                            onDragCancel = { anim.touching = false },
                             onDrag = { change, d ->
                                 change.consume()
                                 val u = size.width.toFloat()
@@ -210,17 +225,17 @@ fun CatScreen(onBack: () -> Unit) {
             ) {
                 val shadow = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
                 Canvas(Modifier.fillMaxSize()) {
-                    val t = clock // read every frame so the cat redraws as it breathes
+                    val t = time // read every frame so the cat redraws as it breathes
                     val purr = mood.purr
                     val grumble = mood.grumble
-                    val sleepy = smooth((purr - 0.2f) / 0.6f)
+                    val sleepy = smoothstep((purr - 0.2f) / 0.6f)
                     val blink = if (purr < 0.35f && grumble == 0f && t % 4.6f < 0.14f) 1f else 0f
                     val closed = max(max(sleepy, blink), grumble * 0.5f) * (1f - 0.8f * anim.chirp)
                     val tailAmp = 1f + grumble
                     drawCat(
                         breathe = 0.5f - 0.5f * cos(2f * PI.toFloat() * anim.breath),
                         closed = closed,
-                        earsFlat = smooth(grumble * 1.6f),
+                        earsFlat = smoothstep(grumble * 1.6f),
                         ruffle = grumble,
                         tailSwing = sin(2f * PI.toFloat() * anim.tail) * tailAmp,
                         tailLift = (0.5f + 0.5f * sin(2f * PI.toFloat() * anim.tail + 0.9f)) * tailAmp,
@@ -241,10 +256,6 @@ fun CatScreen(onBack: () -> Unit) {
     }
 }
 
-private fun smooth(x: Float): Float {
-    val c = x.coerceIn(0f, 1f)
-    return c * c * (3f - 2f * c)
-}
 
 private fun lerp(a: Offset, b: Offset, t: Float) = Offset(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
 

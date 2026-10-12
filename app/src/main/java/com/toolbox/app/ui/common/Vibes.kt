@@ -211,3 +211,25 @@ fun rememberHaptics(): Haptics {
     val vibes = rememberVibes()
     return remember(vibes) { Haptics(vibes) }
 }
+
+/**
+ * Bookkeeping a dragged toy shares between its gesture and its frame loop. [space] keeps detent taps at least
+ * [minGapMs] apart, so a fast turn doesn't run them together into a mush, and [fast] says the frame loop's buzz has
+ * taken over from separate taps.
+ */
+class Feel(private val minGapMs: Long = 25L, private val clock: () -> Long = SystemClock::uptimeMillis) {
+    var fast = false
+    private var lastMs = Long.MIN_VALUE / 2
+
+    /** Runs [play] (a tap) unless one went off less than [minGapMs] ago. */
+    fun space(play: () -> Unit) {
+        val now = clock()
+        if (now - lastMs >= minGapMs) {
+            play()
+            lastMs = now
+        }
+    }
+
+    /** Counts a vibration played some other way, so the next [space] waits for it. */
+    fun mark() { lastMs = clock() }
+}

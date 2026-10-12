@@ -7,10 +7,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -50,8 +46,25 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.AwaitPointerEventScope
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
+import com.toolbox.app.ui.common.Stat
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.Vibes
 import com.toolbox.app.ui.common.rememberPcmStream
@@ -69,6 +82,7 @@ internal const val DETENTS = 10
 
 private val SLIDER_PAD = 28.dp
 private val CHROME = listOf(Color(0xFF9AA0A6), Color(0xFFF8F9FA), Color(0xFFBDC1C6), Color(0xFF80868B))
+private const val PRESS_DELAY_MS = 100L // while the panel scrolls, how long a finger must stay put to count as a press
 
 /** Nearest detent (0 until [DETENTS]) to a slider position 0..1. */
 internal fun nearestDetent(pos: Float): Int = (pos.coerceIn(0f, 1f) * (DETENTS - 1)).roundToInt()
@@ -79,12 +93,52 @@ internal fun magnetPos(pos: Float): Float {
     return p + (nearestDetent(p) / (DETENTS - 1f) - p) * 0.35f
 }
 
+/** How a touch on a switch turned out: see [awaitPress]. */
+private enum class Touch { Scroll, Tap, Hold }
+
+/**
+ * Waits for a finger and says what it was. On a panel that can't scroll ([scrolls] false) it's a [Touch.Hold] the
+ * moment the finger lands, so a switch fires on press. On one that can, the finger has to stay put a moment first
+ * ([PRESS_DELAY_MS], or move sideways): if the panel starts scrolling instead it's a [Touch.Scroll] and nothing
+ * clicks, and if it lifts in that moment it's a [Touch.Tap], already over.
+ */
+private suspend fun AwaitPointerEventScope.awaitPress(scrolls: Boolean): Touch = pressAfter(awaitFirstDown(), scrolls)
+
+/** [awaitPress] for a finger that has already landed at [down]. */
+private suspend fun AwaitPointerEventScope.pressAfter(down: PointerInputChange, scrolls: Boolean): Touch {
+    if (!scrolls) return Touch.Hold
+    val slop = viewConfiguration.touchSlop
+    return withTimeoutOrNull(PRESS_DELAY_MS) {
+        var touch: Touch? = null
+        while (touch == null) {
+            // The Final pass comes after the panel's scrolling, so a scroll has consumed the move by now.
+            val change = awaitPointerEvent(PointerEventPass.Final).changes.firstOrNull { it.id == down.id }
+            touch = when {
+                change == null || change.isConsumed -> Touch.Scroll
+                !change.pressed -> Touch.Tap
+                (change.position - down.position).getDistance() > slop -> Touch.Hold
+                else -> null
+            }
+        }
+        touch
+    } ?: Touch.Hold
+}
+
+/** Waits until every finger is up, or the gesture is taken away. */
+private suspend fun AwaitPointerEventScope.awaitRelease() {
+    do {
+        val event = awaitPointerEvent()
+    } while (event.changes.any { it.pressed })
+}
+
 @Composable
 fun SwitchesScreen(onBack: () -> Unit) {
     val audio = rememberPcmStream { SwitchAudio() }
     val vibes = rememberVibes()
     var total by rememberPref("switches_clicks", 0)
     var session by rememberSaveable { mutableIntStateOf(0) }
+    val scroll = rememberScrollState()
+    val scrolls = { scroll.maxValue > 0 }
 
     fun counted() {
         session += 1
@@ -96,7 +150,8 @@ fun SwitchesScreen(onBack: () -> Unit) {
             Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState())
+                // Like ToolBody: it only scrolls when the panel doesn't fit, and only then do presses wait.
+                .verticalScroll(scroll, enabled = scroll.maxValue > 0)
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -107,23 +162,15 @@ fun SwitchesScreen(onBack: () -> Unit) {
             }
             val rowModifier = Modifier.widthIn(max = 480.dp).fillMaxWidth()
             Row(rowModifier, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ToyCard("Toggle", Modifier.weight(1f)) { ToggleSwitch(audio, vibes) { counted() } }
-                ToyCard("Rocker", Modifier.weight(1f)) { RockerSwitch(audio, vibes) { counted() } }
+                ToyCard("Toggle", Modifier.weight(1f)) { ToggleSwitch(audio, vibes, scrolls) { counted() } }
+                ToyCard("Rocker", Modifier.weight(1f)) { RockerSwitch(audio, vibes, scrolls) { counted() } }
             }
             Row(rowModifier, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ToyCard("Arcade button", Modifier.weight(1f)) { ArcadeButton(audio, vibes) { counted() } }
-                ToyCard("Clicky pen", Modifier.weight(1f)) { ClickyPen(audio, vibes) { counted() } }
+                ToyCard("Arcade button", Modifier.weight(1f)) { ArcadeButton(audio, vibes, scrolls) { counted() } }
+                ToyCard("Clicky pen", Modifier.weight(1f)) { ClickyPen(audio, vibes, scrolls) { counted() } }
             }
-            ToyCard("Notched slider", rowModifier) { NotchedSlider(audio, vibes) { counted() } }
+            ToyCard("Notched slider", rowModifier) { NotchedSlider(audio, vibes, scrolls) { counted() } }
         }
-    }
-}
-
-@Composable
-private fun Stat(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, style = MaterialTheme.typography.headlineMedium)
-        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -133,16 +180,23 @@ private fun ToyCard(label: String, modifier: Modifier = Modifier, content: @Comp
         Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             content()
             Spacer(Modifier.height(6.dp))
-            Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // Each switch names itself to TalkBack, so this caption isn't read twice.
+            Text(
+                label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.clearAndSetSemantics {},
+            )
         }
     }
 }
 
 // ---- 1. Toggle switch ------------------------------------------------------------------------------------
 
-/** A chunky bat-handle toggle. Tap it, or flick the lever up/down; it snaps over with a two-stage click. */
+/**
+ * A chunky bat-handle toggle. It snaps over with a two-stage click as soon as you press it; keep going and you can
+ * flick the lever back the other way.
+ */
 @Composable
-private fun ToggleSwitch(audio: SwitchAudio, vibes: Vibes, onClick: () -> Unit) {
+private fun ToggleSwitch(audio: SwitchAudio, vibes: Vibes, scrolls: () -> Boolean, onClick: () -> Unit) {
     var on by rememberSaveable { mutableStateOf(false) }
     val lever = remember { Animatable(if (on) 1f else -1f) }
     val scope = rememberCoroutineScope()
@@ -164,15 +218,29 @@ private fun ToggleSwitch(audio: SwitchAudio, vibes: Vibes, onClick: () -> Unit) 
         Modifier
             .fillMaxWidth()
             .aspectRatio(1f)
-            .pointerInput(Unit) { detectTapGestures(onTap = { flip(!on) }) }
+            .semantics {
+                contentDescription = "Toggle switch"
+                role = Role.Switch
+                toggleableState = ToggleableState(on)
+                onClick { flip(!on); true }
+            }
             .pointerInput(Unit) {
                 val threshold = 20.dp.toPx()
-                var travel = 0f
-                detectVerticalDragGestures(onDragStart = { travel = 0f }) { change, dy ->
-                    change.consume()
-                    travel += dy
-                    if (travel < -threshold) { flip(true); travel = 0f }
-                    if (travel > threshold) { flip(false); travel = 0f }
+                awaitEachGesture {
+                    val touch = awaitPress(scrolls())
+                    if (touch == Touch.Scroll) return@awaitEachGesture
+                    flip(!on)
+                    if (touch == Touch.Tap) return@awaitEachGesture
+                    // Still down: a flick the other way throws the lever back.
+                    var travel = 0f
+                    while (true) {
+                        val change = awaitPointerEvent().changes.firstOrNull() ?: break
+                        if (!change.pressed) break
+                        travel += change.positionChange().y
+                        change.consume()
+                        if (travel < -threshold) { flip(true); travel = 0f }
+                        if (travel > threshold) { flip(false); travel = 0f }
+                    }
                 }
             },
     ) { drawToggle(lever.value) }
@@ -237,24 +305,38 @@ private fun DrawScope.drawToggle(p: Float) {
 
 // ---- 2. Rocker switch ------------------------------------------------------------------------------------
 
-/** A light-switch rocker with a neon lamp; tap to rock it over with a deep thock. */
+/** A light-switch rocker with a neon lamp; press it to rock it over with a deep thock. */
 @Composable
-private fun RockerSwitch(audio: SwitchAudio, vibes: Vibes, onClick: () -> Unit) {
+private fun RockerSwitch(audio: SwitchAudio, vibes: Vibes, scrolls: () -> Boolean, onClick: () -> Unit) {
     var on by rememberSaveable { mutableStateOf(false) }
     val tilt = remember { Animatable(if (on) 1f else 0f) }
     val scope = rememberCoroutineScope()
+
+    fun rock() {
+        on = !on
+        onClick()
+        audio.rocker(on)
+        vibes.thud(0.6f)
+        scope.launch { tilt.animateTo(if (on) 1f else 0f, spring(dampingRatio = 0.7f, stiffness = 2500f)) }
+    }
+
     Canvas(
         Modifier
             .fillMaxWidth()
             .aspectRatio(1f)
+            .semantics {
+                contentDescription = "Rocker switch"
+                role = Role.Switch
+                toggleableState = ToggleableState(on)
+                onClick { rock(); true }
+            }
             .pointerInput(Unit) {
-                detectTapGestures(onTap = {
-                    on = !on
-                    onClick()
-                    audio.rocker(on)
-                    vibes.thud(0.6f)
-                    scope.launch { tilt.animateTo(if (on) 1f else 0f, spring(dampingRatio = 0.7f, stiffness = 2500f)) }
-                })
+                awaitEachGesture {
+                    val touch = awaitPress(scrolls())
+                    if (touch == Touch.Scroll) return@awaitEachGesture
+                    rock()
+                    if (touch == Touch.Hold) awaitRelease()
+                }
             },
     ) { drawRocker(tilt.value.coerceIn(0f, 1f), GoogleColors.Green) }
 }
@@ -327,24 +409,39 @@ private fun DrawScope.drawRocker(q: Float, color: Color) {
 
 /** A big domed arcade button: solid click on press, lighter click on release. */
 @Composable
-private fun ArcadeButton(audio: SwitchAudio, vibes: Vibes, onClick: () -> Unit) {
+private fun ArcadeButton(audio: SwitchAudio, vibes: Vibes, scrolls: () -> Boolean, onClick: () -> Unit) {
     val depth = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
+
+    fun press() {
+        onClick()
+        audio.arcadeDown()
+        vibes.click(0.8f)
+        scope.launch { depth.animateTo(1f, tween(35)) }
+    }
+
+    fun release() {
+        audio.arcadeUp()
+        vibes.tick(0.4f)
+        scope.launch { depth.animateTo(0f, spring(dampingRatio = 0.5f, stiffness = 1500f)) }
+    }
+
     Canvas(
         Modifier
             .fillMaxWidth()
             .aspectRatio(1f)
+            .semantics {
+                contentDescription = "Arcade button"
+                role = Role.Button
+                onClick { press(); release(); true }
+            }
             .pointerInput(Unit) {
                 awaitEachGesture {
-                    awaitFirstDown()
-                    onClick()
-                    audio.arcadeDown()
-                    vibes.click(0.8f)
-                    scope.launch { depth.animateTo(1f, tween(35)) }
-                    waitForUpOrCancellation()
-                    audio.arcadeUp()
-                    vibes.tick(0.4f)
-                    scope.launch { depth.animateTo(0f, spring(dampingRatio = 0.5f, stiffness = 1500f)) }
+                    val touch = awaitPress(scrolls())
+                    if (touch == Touch.Scroll) return@awaitEachGesture
+                    press()
+                    if (touch == Touch.Hold) awaitRelease()
+                    release()
                 }
             },
     ) { drawArcade(depth.value.coerceIn(0f, 1f), GoogleColors.Red) }
@@ -387,33 +484,50 @@ private fun DrawScope.drawArcade(d: Float, color: Color) {
 
 // ---- 4. Clicky pen ---------------------------------------------------------------------------------------
 
-/** A retractable pen: each tap on it clicks the nib out (high, sharp) or back in (lower). */
+/** A retractable pen: each press on it clicks the nib out (high, sharp) or back in (lower). */
 @Composable
-private fun ClickyPen(audio: SwitchAudio, vibes: Vibes, onClick: () -> Unit) {
+private fun ClickyPen(audio: SwitchAudio, vibes: Vibes, scrolls: () -> Boolean, onClick: () -> Unit) {
     var extended by rememberSaveable { mutableStateOf(false) }
     val nib = remember { Animatable(if (extended) 1f else 0f) }
     val press = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
+
+    fun click() {
+        extended = !extended
+        onClick()
+        if (extended) {
+            audio.penIn()
+            vibes.click(0.55f)
+        } else {
+            audio.penOut()
+            vibes.tick(0.6f)
+        }
+        scope.launch { press.animateTo(1f, tween(30)) }
+        scope.launch { nib.animateTo(if (extended) 1f else 0f, spring(dampingRatio = 0.5f, stiffness = 2000f)) }
+    }
+
+    fun letGo() {
+        scope.launch { press.animateTo(0f, spring(dampingRatio = 0.5f, stiffness = 1500f)) }
+    }
+
     Canvas(
         Modifier
             .fillMaxWidth()
             .aspectRatio(1f)
+            .semantics {
+                contentDescription = "Clicky pen"
+                role = Role.Switch
+                stateDescription = if (extended) "Nib out" else "Nib in"
+                toggleableState = ToggleableState(extended)
+                onClick { click(); letGo(); true }
+            }
             .pointerInput(Unit) {
                 awaitEachGesture {
-                    awaitFirstDown()
-                    extended = !extended
-                    onClick()
-                    if (extended) {
-                        audio.penIn()
-                        vibes.click(0.55f)
-                    } else {
-                        audio.penOut()
-                        vibes.tick(0.6f)
-                    }
-                    scope.launch { press.animateTo(1f, tween(30)) }
-                    scope.launch { nib.animateTo(if (extended) 1f else 0f, spring(dampingRatio = 0.5f, stiffness = 2000f)) }
-                    waitForUpOrCancellation()
-                    scope.launch { press.animateTo(0f, spring(dampingRatio = 0.5f, stiffness = 1500f)) }
+                    val touch = awaitPress(scrolls())
+                    if (touch == Touch.Scroll) return@awaitEachGesture
+                    click()
+                    if (touch == Touch.Hold) awaitRelease()
+                    letGo()
                 }
             },
     ) { drawPen(nib.value.coerceIn(0f, 1.2f), press.value.coerceIn(0f, 1f), GoogleColors.Blue) }
@@ -483,9 +597,9 @@ private fun DrawScope.drawPen(nib: Float, press: Float, color: Color) {
 
 // ---- 5. Notched slider -----------------------------------------------------------------------------------
 
-/** A fader with [DETENTS] notches: ticks as it passes each one and snaps to the nearest on release. */
+/** A fader with [DETENTS] notches: jumps to your finger, ticks as it passes each one and snaps to the nearest on release. */
 @Composable
-private fun NotchedSlider(audio: SwitchAudio, vibes: Vibes, onClick: () -> Unit) {
+private fun NotchedSlider(audio: SwitchAudio, vibes: Vibes, scrolls: () -> Boolean, onClick: () -> Unit) {
     var pos by remember { mutableFloatStateOf(0f) }
     var detent by remember { mutableIntStateOf(0) }
     val snapJob = remember { mutableStateOf<Job?>(null) }
@@ -494,8 +608,8 @@ private fun NotchedSlider(audio: SwitchAudio, vibes: Vibes, onClick: () -> Unit)
     val marks = MaterialTheme.colorScheme.outline
     val fill = GoogleColors.Blue
 
-    fun follow(x: Float, width: Float, pad: Float) {
-        pos = ((x - pad) / (width - 2 * pad)).coerceIn(0f, 1f)
+    fun follow(to: Float) {
+        pos = to.coerceIn(0f, 1f)
         val d = nearestDetent(pos)
         if (d != detent) {
             detent = d
@@ -517,24 +631,40 @@ private fun NotchedSlider(audio: SwitchAudio, vibes: Vibes, onClick: () -> Unit)
         Modifier
             .fillMaxWidth()
             .height(76.dp)
-            .pointerInput(Unit) {
-                detectTapGestures(onTap = {
-                    snapJob.value?.cancel()
-                    follow(it.x, size.width.toFloat(), SLIDER_PAD.toPx())
-                    snap()
-                })
+            .semantics {
+                contentDescription = "Notched slider"
+                progressBarRangeInfo = ProgressBarRangeInfo(detent.toFloat(), 0f..(DETENTS - 1f), steps = DETENTS - 2)
+                setProgress { value ->
+                    val d = value.roundToInt().coerceIn(0, DETENTS - 1)
+                    if (d != detent) {
+                        snapJob.value?.cancel()
+                        follow(d / (DETENTS - 1f))
+                        snap()
+                    }
+                    true
+                }
             }
             .pointerInput(Unit) {
-                detectHorizontalDragGestures(
-                    onDragStart = {
-                        snapJob.value?.cancel()
-                        follow(it.x, size.width.toFloat(), SLIDER_PAD.toPx())
-                    },
-                    onDragEnd = { snap() },
-                    onDragCancel = { snap() },
-                ) { change, _ ->
-                    change.consume()
-                    follow(change.position.x, size.width.toFloat(), SLIDER_PAD.toPx())
+                fun at(x: Float): Float {
+                    val pad = SLIDER_PAD.toPx()
+                    return (x - pad) / (size.width - 2 * pad)
+                }
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    // Waits only while the panel scrolls, to tell a press from a scroll that started here.
+                    val touch = pressAfter(down, scrolls())
+                    if (touch == Touch.Scroll) return@awaitEachGesture
+                    snapJob.value?.cancel()
+                    follow(at(down.position.x))
+                    if (touch == Touch.Hold) {
+                        while (true) {
+                            val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) break
+                            change.consume()
+                            follow(at(change.position.x))
+                        }
+                    }
+                    snap()
                 }
             },
     ) { drawSlider(magnetPos(pos), detent, track, marks, fill) }

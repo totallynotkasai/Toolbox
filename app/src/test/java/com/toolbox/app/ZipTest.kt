@@ -5,6 +5,7 @@ import com.toolbox.app.toys.zip.boltDelta
 import com.toolbox.app.toys.zip.pawlNotch
 import com.toolbox.app.toys.zip.teethPassed
 import com.toolbox.app.toys.zip.zipSpread
+import com.toolbox.app.toys.zip.zipTeeth
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -14,6 +15,14 @@ class ZipTest {
         assertEquals(0, teethPassed(0f))
         assertEquals(ZIP_TEETH * 2, teethPassed(1f))
         assertEquals(ZIP_TEETH * 2, teethPassed(1.5f))
+        assertEquals(40, teethPassed(1f, teeth = 20))
+    }
+
+    @Test fun teethKeepARoughlyEvenSizeWhateverTheZipsHeight() {
+        assertEquals(ZIP_TEETH, zipTeeth(484f))  // a phone in portrait
+        assertEquals(16, zipTeeth(110f))         // a short zip keeps teeth big enough to see
+        assertEquals(64, zipTeeth(2000f))        // and a tall one doesn't get hundreds
+        assertTrue(zipTeeth(700f) in 60..64)
     }
 
     @Test fun zipIsShutBelowTheSliderAndSpreadsAbove() {

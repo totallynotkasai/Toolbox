@@ -68,3 +68,6 @@ class Svf(fc: Float, private val damp: Float) {
         return bp
     }
 }
+
+/** A random multiplier within ±[amount]/2 of 1, so repeated hits don't all sound identical. */
+fun jitter(amount: Double): Double = 1.0 + (Random.nextDouble() - 0.5) * amount

@@ -48,6 +48,14 @@ class RainStickTest {
         assertEquals(0L, sim.run(1f, 0f, g))
     }
 
+    @Test fun aPileComesToRestAndAPourDoesNot() {
+        val sim = RainStickSim()
+        sim.run(5f, 0f, g)
+        assertTrue("fastest ${sim.fastest()}", sim.fastest() < RainStickSim.SETTLED_SPEED)
+        sim.run(1f, 0f, -g)
+        assertTrue("fastest ${sim.fastest()}", sim.fastest() > RainStickSim.SETTLED_SPEED * 10)
+    }
+
     @Test fun hitCodesRoundTrip() {
         val code = RainStickSim.TYPE_WALL * 10f + 0.37f
         assertEquals(RainStickSim.TYPE_WALL, RainStickSim.hitType(code))

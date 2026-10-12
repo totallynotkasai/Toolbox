@@ -2,6 +2,8 @@ package com.toolbox.app.toys.zip
 
 import com.toolbox.app.ui.common.PcmStream
 import com.toolbox.app.ui.common.Ping
+import com.toolbox.app.ui.common.jitter
+import com.toolbox.app.ui.common.smoothstep
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.math.min
 import kotlin.random.Random
@@ -171,13 +173,6 @@ internal class ZipAudio : PcmStream("zip-audio") {
             out[i] = s
         }
         voices.removeAll { it.done }
-    }
-
-    private fun jitter(amount: Double) = 1.0 + (Random.nextDouble() - 0.5) * amount
-
-    private fun smoothstep(x: Float): Float {
-        val t = x.coerceIn(0f, 1f)
-        return t * t * (3f - 2f * t)
     }
 
     private companion object {

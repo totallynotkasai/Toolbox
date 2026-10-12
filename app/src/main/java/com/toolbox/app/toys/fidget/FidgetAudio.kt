@@ -1,4 +1,4 @@
-package com.toolbox.app.tools.fidget
+package com.toolbox.app.toys.fidget
 
 import com.toolbox.app.ui.common.PcmStream
 import kotlin.math.PI

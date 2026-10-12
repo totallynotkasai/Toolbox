@@ -10,6 +10,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Turns frame timestamps into a step length in seconds. The first frame after [reset] is a zero step, and every
@@ -37,6 +38,12 @@ class GameLoop internal constructor(maxDt: Float) {
     /** Restarts an idle loop, e.g. when a touch or a new game sets something moving. Safe to call any time. */
     fun wake() { wakeUp.trySend(Unit) }
 
+    /**
+     * Milliseconds to wait after each frame before asking for the next, 0 for every display frame. Something that
+     * only drifts (a sleeping cat breathing) can run at a gentler rate and spare the battery.
+     */
+    var frameGapMs = 0L
+
     internal suspend fun awaitWake() = wakeUp.receive()
 }
 
@@ -47,7 +54,7 @@ class GameLoop internal constructor(maxDt: Float) {
  * The first step after a pause or an idle spell is zero.
  */
 @Composable
-fun rememberGameLoop(enabled: Boolean = true, maxDt: Float = 0.05f, onFrame: (dt: Float) -> Boolean): GameLoop {
+fun rememberGameLoop(enabled: Boolean = true, maxDt: Float = 0.05f, onFrame: GameLoop.(dt: Float) -> Boolean): GameLoop {
     val loop = remember(maxDt) { GameLoop(maxDt) }
     val frame by rememberUpdatedState(onFrame)
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -56,10 +63,13 @@ fun rememberGameLoop(enabled: Boolean = true, maxDt: Float = 0.05f, onFrame: (dt
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             loop.clock.reset()
             while (true) {
-                val moving = withFrameNanos { frame(loop.clock.step(it)) }
+                val moving = withFrameNanos { loop.frame(loop.clock.step(it)) }
                 if (!moving) {
                     loop.awaitWake()
                     loop.clock.reset()
+                } else if (loop.frameGapMs > 0) {
+                    // A wake() cuts the wait short, so a touch gets a prompt frame.
+                    withTimeoutOrNull(loop.frameGapMs) { loop.awaitWake() }
                 }
             }
         }

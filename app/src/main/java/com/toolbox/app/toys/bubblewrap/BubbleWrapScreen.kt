@@ -12,21 +12,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -41,13 +43,17 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import com.toolbox.app.ui.common.Stat
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.rememberGameLoop
 import com.toolbox.app.ui.common.rememberPcmStream
 import com.toolbox.app.ui.common.rememberPref
 import com.toolbox.app.ui.common.rememberVibes
 import com.toolbox.app.ui.theme.GoogleColors
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.random.Random
@@ -56,6 +62,8 @@ private const val BUBBLE_DP = 54
 private const val HOLD_POP_MS = 150L         // a held bubble pops without waiting for the lift
 private const val NEXT_SHEET_DELAY_MS = 700L // beat between the last pop and a fresh sheet
 private const val SLIDE_SECONDS = 0.5f
+private val EDGE_GUARD = 48.dp  // how far in from each side the back gesture is held off
+private val GUARD_HEIGHT = 200.dp // the most of an edge Android lets an app keep for itself
 
 /** A finger's claim on the bubble it first touched; [resolved] once that press has popped or squeaked it. */
 private class Hold(val bubble: Int, val startMs: Long) {
@@ -120,36 +128,31 @@ fun BubbleWrapScreen(onBack: () -> Unit) {
         }
     }
 
-    // Frame loop: hold-to-pop timing, squish easing, pop bursts and the sheet change.
-    LaunchedEffect(Unit) {
-        var last = 0L
-        while (true) {
-            withFrameNanos { nanos ->
-                val dt = if (last == 0L) 0f else ((nanos - last) / 1e9f).coerceAtMost(0.05f)
-                last = nanos
-                val now = SystemClock.uptimeMillis()
-                var moving = false
-                val sheet = st.sheet
-                if (sheet != null) {
-                    for (h in st.holds.values) {
-                        if (!h.resolved && now - h.startMs >= HOLD_POP_MS) {
-                            h.resolved = true
-                            resolve(sheet, h.bubble)
-                        }
-                    }
-                    sheet.pressed.fill(false)
-                    for (h in st.holds.values) sheet.pressed[h.bubble] = true
-                    if (sheet.animate(dt)) moving = true
+    // Frame loop: hold-to-pop timing, squish easing, pop bursts and the sheet change. It goes idle once every
+    // bubble has settled and no finger or new sheet is pending; a touch wakes it.
+    val loop = rememberGameLoop { dt ->
+        val now = SystemClock.uptimeMillis()
+        var moving = false
+        val sheet = st.sheet
+        if (sheet != null) {
+            for (h in st.holds.values) {
+                if (!h.resolved && now - h.startMs >= HOLD_POP_MS) {
+                    h.resolved = true
+                    resolve(sheet, h.bubble)
                 }
-                if (st.slide < 1f) {
-                    st.slide = (st.slide + dt / SLIDE_SECONDS).coerceAtMost(1f)
-                    if (st.slide >= 1f) st.old = null
-                    moving = true
-                }
-                if (st.nextSheetAt != 0L && now >= st.nextSheetAt) newSheet(rollIn = true)
-                if (moving) frame++
             }
+            sheet.pressed.fill(false)
+            for (h in st.holds.values) sheet.pressed[h.bubble] = true
+            if (sheet.animate(dt)) moving = true
         }
+        if (st.slide < 1f) {
+            st.slide = (st.slide + dt / SLIDE_SECONDS).coerceAtMost(1f)
+            if (st.slide >= 1f) st.old = null
+            moving = true
+        }
+        if (st.nextSheetAt != 0L && now >= st.nextSheetAt) newSheet(rollIn = true)
+        if (moving) frame++
+        moving || st.holds.isNotEmpty() || st.nextSheetAt != 0L || st.slide < 1f
     }
 
     ToolScaffold(title = "Bubble Wrap", onBack = onBack) { padding ->
@@ -158,7 +161,7 @@ fun BubbleWrapScreen(onBack: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(40.dp)) {
-                Stat("This sheet", "$sheetPops / $sheetSize")
+                Stat("This sheet", "$sheetPops / $sheetSize", widest = "000 / 000")
                 Stat("Lifetime", "$total")
             }
             Spacer(Modifier.height(12.dp))
@@ -168,6 +171,10 @@ fun BubbleWrapScreen(onBack: () -> Unit) {
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(20.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    // Hold off the back gesture along the lower part of both edges, where a thumb popping the
+                    // outer bubbles would otherwise leave the toy.
+                    .systemGestureExclusion { with(density) { edgeGuard(it, left = true) } }
+                    .systemGestureExclusion { with(density) { edgeGuard(it, left = false) } }
                     .onSizeChanged { sz ->
                         val g = st.grid
                         val w = sz.width.toFloat()
@@ -186,16 +193,21 @@ fun BubbleWrapScreen(onBack: () -> Unit) {
                                 val sheet = st.sheet
                                 val grid = st.grid
                                 for (c in event.changes) {
+                                    // A touch the system took away (a back swipe from the edge, say) comes through
+                                    // as a lift that's already consumed: that one mustn't pop anything.
+                                    val cancelled = c.isConsumed
                                     if (c.pressed && !c.previousPressed) {
                                         if (sheet != null && grid != null && st.slide >= 1f) {
                                             val i = grid.hit(c.position.x, c.position.y)
                                             if (i >= 0 && !sheet.popped[i] && st.holds.values.none { it.bubble == i }) {
                                                 st.holds[c.id] = Hold(i, now)
+                                                loop.wake()
                                             }
                                         }
                                     } else if (!c.pressed) {
                                         val h = st.holds.remove(c.id)
-                                        if (h != null && !h.resolved && sheet != null) resolve(sheet, h.bubble)
+                                        if (h != null && !h.resolved && sheet != null && !cancelled) resolve(sheet, h.bubble)
+                                        loop.wake()
                                     }
                                     c.consume()
                                 }
@@ -211,17 +223,18 @@ fun BubbleWrapScreen(onBack: () -> Unit) {
                 st.sheet?.let { sheet -> translate(left = w * (1f - ease)) { drawSheet(sheet, grid) } }
             }
             Spacer(Modifier.height(12.dp))
-            FilledTonalButton(onClick = { newSheet(rollIn = true) }) { Text("New sheet") }
+            FilledTonalButton(onClick = { newSheet(rollIn = true); loop.wake() }) { Text("New sheet") }
         }
     }
 }
 
-@Composable
-private fun Stat(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, style = MaterialTheme.typography.headlineMedium)
-        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
+/** A strip [EDGE_GUARD] wide up one side of the sheet, over its bottom [GUARD_HEIGHT]. */
+private fun Density.edgeGuard(coords: LayoutCoordinates, left: Boolean): Rect {
+    val w = coords.size.width.toFloat()
+    val h = coords.size.height.toFloat()
+    val strip = min(EDGE_GUARD.toPx(), w / 2f)
+    val top = max(0f, h - GUARD_HEIGHT.toPx())
+    return if (left) Rect(0f, top, strip, h) else Rect(w - strip, top, w, h)
 }
 
 private fun DrawScope.drawSheet(sheet: BubbleSheet, grid: HexGrid) {

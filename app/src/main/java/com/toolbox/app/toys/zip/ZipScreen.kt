@@ -1,6 +1,5 @@
 package com.toolbox.app.toys.zip
 
-import android.os.SystemClock
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -23,7 +22,6 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -32,7 +30,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,35 +45,53 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.toolbox.app.ui.common.Feel
+import com.toolbox.app.ui.common.Stat
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.fixed
+import com.toolbox.app.ui.common.rememberGameLoop
 import com.toolbox.app.ui.common.rememberPcmStream
 import com.toolbox.app.ui.common.rememberPref
 import com.toolbox.app.ui.common.rememberVibes
+import com.toolbox.app.ui.common.turnDelta
 import com.toolbox.app.ui.theme.GoogleColors
 import kotlin.math.abs
 import kotlin.math.atan
-import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.tanh
 
 private enum class ZipMode(val label: String) { Zip("Zip"), Ratchet("Ratchet") }
 
-internal const val ZIP_TEETH = 44          // teeth per side
-private const val ZIP_CROSSINGS = ZIP_TEETH * 2 // left and right teeth alternate, so the slider passes twice as many
+internal const val ZIP_TEETH = 44          // teeth per side on a phone-sized zip
+private const val TOOTH_PITCH_DP = 11f     // so a zip gets a tooth for about every 11 dp of travel
+private const val MIN_TEETH = 16
+private const val MAX_TEETH = 64
 internal const val RATCHET_STEP = 15f      // degrees per gear tooth
 private const val TRACK_TOP = 0.05f        // slider travel, as fractions of the zip's height
 private const val TRACK_BOTTOM = 0.8f
 private const val FAST_TEETH = 30f         // teeth/s above which ticks would smear; buzz instead
-private const val MIN_VIBE_GAP_MS = 25L
 private const val HEAD = 0.34f             // ratchet head radius, fraction of the half-size
 
-/** Teeth the slider has passed at [pos] (0 = closed, slider at the top; 1 = fully open). */
-internal fun teethPassed(pos: Float): Int = floor(pos.coerceIn(0f, 1f) * ZIP_CROSSINGS).toInt()
+/**
+ * Teeth per side for a zip whose slider travels [trackDp]: about [ZIP_TEETH] on a phone, fewer on a short zip so
+ * they don't shrink to mush, more on a tall one so they don't turn into planks.
+ */
+internal fun zipTeeth(trackDp: Float): Int = (trackDp / TOOTH_PITCH_DP).roundToInt().coerceIn(MIN_TEETH, MAX_TEETH)
+
+/**
+ * Teeth the slider has passed at [pos] (0 = closed, slider at the top; 1 = fully open) on a zip with [teeth] a side.
+ * The two sides' teeth alternate, so it passes twice as many as there are on each side.
+ */
+internal fun teethPassed(pos: Float, teeth: Int = ZIP_TEETH): Int = floor(pos.coerceIn(0f, 1f) * teeth * 2).toInt()
 
 /** How far each half of the zip has pulled away from the centre line, [d] px above the slider. */
 internal fun zipSpread(d: Float, maxOpen: Float): Float = if (d <= 0f) 0f else maxOpen * tanh(d * 0.2f / maxOpen)
@@ -91,21 +106,12 @@ internal fun boltDelta(delta: Float, clicksClockwise: Boolean): Float =
 /** Gear tooth the pawl sits behind; each change is one click. */
 internal fun pawlNotch(handle: Float, bolt: Float): Int = floor((handle - bolt) / RATCHET_STEP).toInt()
 
-private fun wrapDelta(deg: Float): Float {
-    var d = deg % 360f
-    if (d > 180f) d -= 360f
-    if (d < -180f) d += 360f
-    return d
-}
-
-/** Angle of [p] around [c], degrees clockwise from 12 o'clock. */
-private fun angleOf(p: Offset, c: Offset): Float =
-    Math.toDegrees(atan2((p.x - c.x).toDouble(), (c.y - p.y).toDouble())).toFloat()
-
-/** Bookkeeping the gestures and frame loop share that never needs a recomposition. */
-private class Feel {
-    var lastVibeMs = 0L
-    var fast = false
+/** The frame loop's speed estimates, which never need a recomposition. */
+private class Rates {
+    var prevPos = 0f
+    var prevBolt = 0f
+    var teeth = 0f // teeth/s
+    var bolt = 0f  // deg/s
 }
 
 @Composable
@@ -120,15 +126,13 @@ fun ZipScreen(onBack: () -> Unit) {
     var handle by remember { mutableFloatStateOf(0f) }      // wrench handle angle, degrees
     var bolt by remember { mutableFloatStateOf(0f) }        // bolt angle, degrees, clockwise = tighter
     var clicks by rememberSaveable { mutableIntStateOf(0) }
+    var teeth by remember { mutableIntStateOf(ZIP_TEETH) } // a side, set from the zip's height
     val feel = remember { Feel() }
+    val rates = remember { Rates() }
 
     val audio = rememberPcmStream { ZipAudio() }
     val vibes = rememberVibes()
 
-    fun vibeTick(strength: Float) {
-        val now = SystemClock.uptimeMillis()
-        if (now - feel.lastVibeMs >= MIN_VIBE_GAP_MS) { vibes.tick(strength); feel.lastVibeMs = now }
-    }
 
     fun flip() {
         clicksClockwise = !clicksClockwise
@@ -136,35 +140,28 @@ fun ZipScreen(onBack: () -> Unit) {
         vibes.click(0.6f)
     }
 
-    // Frame loop: tooth rate and bolt speed, which drive the zip sound, the creak and the buzz.
-    LaunchedEffect(Unit) {
-        var last = 0L
-        var prevPos = pos
-        var prevBolt = bolt
-        var rate = 0f      // teeth/s
-        var boltSpeed = 0f // deg/s
-        while (true) {
-            withFrameNanos { now ->
-                val dt = if (last == 0L) 0f else ((now - last) / 1e9f).coerceAtMost(0.05f)
-                last = now
-                if (dt > 0f) {
-                    val k = min(1f, dt * 12f)
-                    rate += (abs(pos - prevPos) / dt * ZIP_CROSSINGS - rate) * k
-                    boltSpeed += (abs(bolt - prevBolt) / dt - boltSpeed) * k
-                }
-                prevPos = pos
-                prevBolt = bolt
-                val m = currentMode
-                feel.fast = rate > FAST_TEETH
-                audio.zipRate = if (m == ZipMode.Zip) rate else 0f
-                audio.creak = if (m == ZipMode.Ratchet) boltSpeed else 0f
-                when {
-                    m == ZipMode.Zip && feel.fast -> vibes.buzz(0.25f + 0.6f * min(1f, (rate - FAST_TEETH) / 300f))
-                    m == ZipMode.Ratchet && boltSpeed > 5f -> vibes.buzz(min(1f, boltSpeed / 540f) * 0.3f)
-                    else -> vibes.stopBuzz()
-                }
-            }
+    // Frame loop: tooth rate and bolt speed, which drive the zip sound, the creak and the buzz. It goes idle once
+    // both have died away; a drag wakes it.
+    val loop = rememberGameLoop { dt ->
+        if (dt > 0f) {
+            val k = min(1f, dt * 12f)
+            rates.teeth += (abs(pos - rates.prevPos) / dt * teeth * 2 - rates.teeth) * k
+            rates.bolt += (abs(bolt - rates.prevBolt) / dt - rates.bolt) * k
         }
+        rates.prevPos = pos
+        rates.prevBolt = bolt
+        if (rates.teeth < 0.05f) rates.teeth = 0f
+        if (rates.bolt < 0.05f) rates.bolt = 0f
+        val m = currentMode
+        feel.fast = rates.teeth > FAST_TEETH
+        audio.zipRate = if (m == ZipMode.Zip) rates.teeth else 0f
+        audio.creak = if (m == ZipMode.Ratchet) rates.bolt else 0f
+        when {
+            m == ZipMode.Zip && feel.fast -> vibes.buzz(0.25f + 0.6f * min(1f, (rates.teeth - FAST_TEETH) / 300f))
+            m == ZipMode.Ratchet && rates.bolt > 5f -> vibes.buzz(min(1f, rates.bolt / 540f) * 0.3f)
+            else -> vibes.stopBuzz()
+        }
+        held || rates.teeth > 0f || rates.bolt > 0f
     }
 
     ToolScaffold(title = "Zip & Ratchet", onBack = onBack) { padding ->
@@ -190,12 +187,15 @@ fun ZipScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(12.dp))
             when (mode) {
                 ZipMode.Zip -> ZipPane(
-                    pos = pos,
+                    pos = { pos },
                     held = held,
+                    teeth = teeth,
+                    onTrack = { trackDp -> teeth = zipTeeth(trackDp) },
                     onGrab = {
                         held = true
                         audio.grab()
                         vibes.tick(0.25f)
+                        loop.wake()
                     },
                     onRelease = { held = false },
                     onMove = { dPos ->
@@ -204,16 +204,16 @@ fun ZipScreen(onBack: () -> Unit) {
                         if (after != before) {
                             pos = after
                             val opening = after > before
-                            val passed = abs(teethPassed(after) - teethPassed(before))
+                            val passed = abs(teethPassed(after, teeth) - teethPassed(before, teeth))
                             if (passed > 0) {
                                 audio.opening = opening
                                 repeat(min(passed, 3)) { audio.tooth(opening, it) }
-                                if (!feel.fast) vibeTick(if (opening) 0.35f else 0.3f)
+                                if (!feel.fast) feel.space { vibes.tick(if (opening) 0.35f else 0.3f) }
                             }
                             if ((after == 1f || after == 0f) && before != after) {
                                 audio.endStop()
                                 vibes.thud(0.45f)
-                                feel.lastVibeMs = SystemClock.uptimeMillis()
+                                feel.mark()
                             }
                         }
                     },
@@ -224,6 +224,7 @@ fun ZipScreen(onBack: () -> Unit) {
                     clicks = clicks,
                     clicksClockwise = clicksClockwise,
                     onTurn = { d ->
+                        loop.wake()
                         val before = pawlNotch(handle, bolt)
                         handle += d
                         bolt += boltDelta(d, clicksClockwise)
@@ -231,7 +232,7 @@ fun ZipScreen(onBack: () -> Unit) {
                         if (passed > 0) {
                             clicks += passed
                             repeat(min(passed, 3)) { audio.ratchet(it) }
-                            vibeTick(0.6f)
+                            feel.space { vibes.tick(0.6f) }
                         }
                     },
                     onFlip = { flip() },
@@ -243,8 +244,10 @@ fun ZipScreen(onBack: () -> Unit) {
 
 @Composable
 private fun ColumnScope.ZipPane(
-    pos: Float,
+    pos: () -> Float,
     held: Boolean,
+    teeth: Int,
+    onTrack: (Float) -> Unit,
     onGrab: () -> Unit,
     onRelease: () -> Unit,
     onMove: (Float) -> Unit,
@@ -252,16 +255,8 @@ private fun ColumnScope.ZipPane(
     val grab by rememberUpdatedState(onGrab)
     val release by rememberUpdatedState(onRelease)
     val move by rememberUpdatedState(onMove)
-    val passed = teethPassed(pos) / 2
-    Text(
-        when {
-            pos <= 0f -> "Zipped up"
-            pos >= 1f -> "Wide open"
-            else -> "$passed of $ZIP_TEETH teeth open"
-        },
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+    val density = LocalDensity.current
+    ZipStatus(pos, teeth)
     Spacer(Modifier.height(8.dp))
     Box(
         Modifier
@@ -269,6 +264,7 @@ private fun ColumnScope.ZipPane(
             .widthIn(max = 360.dp)
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
+            .onSizeChanged { onTrack(with(density) { it.height.toDp().value } * (TRACK_BOTTOM - TRACK_TOP)) }
             .pointerInput(Unit) {
                 // Drag anywhere: the slider follows the finger's vertical movement, not its position,
                 // so it never jumps when grabbed.
@@ -283,12 +279,27 @@ private fun ColumnScope.ZipPane(
                 )
             },
     ) {
-        Canvas(Modifier.fillMaxSize()) { drawZip(pos, held) }
+        Canvas(Modifier.fillMaxSize()) { drawZip(pos(), held, teeth) }
     }
     Spacer(Modifier.height(8.dp))
     Text(
         "Drag the pull tab down to unzip, up to close",
         style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/** How far open the zip is, in its own scope so a drag recomposes just this line, not the whole pane. */
+@Composable
+private fun ZipStatus(pos: () -> Float, teeth: Int) {
+    val p = pos()
+    Text(
+        when {
+            p <= 0f -> "Zipped up"
+            p >= 1f -> "Wide open"
+            else -> "${teethPassed(p, teeth) / 2} of $teeth teeth open"
+        },
+        style = MaterialTheme.typography.titleMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
@@ -303,7 +314,7 @@ private fun ColumnScope.RatchetPane(
     onFlip: () -> Unit,
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(32.dp)) {
-        Stat("Bolt turns", "%.2f".format(bolt / 360f))
+        Stat("Bolt turns", fixed(bolt / 360f, 2), widest = "-00.00")
         Stat("Clicks", "$clicks")
     }
     val turn by rememberUpdatedState(onTurn)
@@ -326,30 +337,25 @@ private fun ColumnScope.RatchetPane(
                     detectDragGestures { change, _ ->
                         change.consume()
                         val c = Offset(size.width / 2f, size.height / 2f)
-                        // Near the pivot the angle swings wildly for tiny moves; ignore that zone.
-                        if ((change.position - c).getDistance() > size.width * 0.08f) {
-                            turn(wrapDelta(angleOf(change.position, c) - angleOf(change.previousPosition, c)))
-                        }
+                        // Near the pivot the angle swings wildly for tiny moves, and a flick through the middle
+                        // would read as half a turn, so turnDelta ignores that zone and caps the step.
+                        val d = turnDelta(change.previousPosition, change.position, c, size.width * 0.08f)
+                        if (d != 0f) turn(d)
                     }
                 },
         ) {
             Canvas(Modifier.fillMaxSize()) { drawRatchet(handle, bolt, clicksClockwise, plate, marks) }
         }
     }
+    val (free, drive) = if (clicksClockwise) "clockwise" to "anticlockwise" else "anticlockwise" to "clockwise"
     Text(
-        "Clicks turning ${if (clicksClockwise) "clockwise" else "anticlockwise"}, drives the bolt the other way. Tap the head to reverse",
+        "Turn the handle: it clicks freely $free and drives the bolt $drive. Tap the head to swap.",
+        textAlign = TextAlign.Center,
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
 
-@Composable
-private fun Stat(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, style = MaterialTheme.typography.headlineMedium)
-        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
 
 private val Lining = Color(0xFF9E3530)
 private val LiningDeep = Color(0xFF5C1A15)
@@ -367,14 +373,14 @@ private val SteelDark = Color(0xFF5F6368)
  * rows interlock down the centre; above it the halves peel apart into a V (flattening into parallel edges
  * further up) and show the red lining. The slider is a tapered metal body with its pull tab hanging below.
  */
-private fun DrawScope.drawZip(pos: Float, held: Boolean) {
+private fun DrawScope.drawZip(pos: Float, held: Boolean, teeth: Int) {
     val w = size.width
     val h = size.height
     val cx = w / 2f
     val top = h * TRACK_TOP
     val len = h * (TRACK_BOTTOM - TRACK_TOP)
     val sliderY = top + pos * len
-    val pitch = len / ZIP_TEETH
+    val pitch = len / teeth
     val tw = min(w * 0.11f, pitch * 2.6f) // tooth length across the zip
     val th = pitch * 0.46f                 // tooth thickness along it
     val tapeW = w * 0.08f
@@ -423,7 +429,7 @@ private fun DrawScope.drawZip(pos: Float, held: Boolean) {
     }
 
     // Teeth. Each is square to its tape, so they fan out as the tape angles away in the V.
-    for (i in 0 until ZIP_TEETH) {
+    for (i in 0 until teeth) {
         for (s in floatArrayOf(-1f, 1f)) {
             val y = top + (i + if (s < 0f) 0.25f else 0.75f) * pitch
             val inner = cx + s * spread(y)

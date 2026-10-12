@@ -52,7 +52,7 @@ import com.toolbox.app.tools.counter.CounterScreen
 import com.toolbox.app.tools.dates.DateCalculatorScreen
 import com.toolbox.app.tools.dice.DiceScreen
 import com.toolbox.app.tools.eightball.EightBallScreen
-import com.toolbox.app.tools.fidget.FidgetSpinnerScreen
+import com.toolbox.app.toys.fidget.FidgetSpinnerScreen
 import com.toolbox.app.tools.level.LevelScreen
 import com.toolbox.app.tools.meditate.MeditateScreen
 import com.toolbox.app.tools.metronome.MetronomeScreen
@@ -80,6 +80,7 @@ enum class Category(val title: String) {
     Measurements("Measurements"),
     Time("Time"),
     Toys("Fidget Toys"),
+    Calm("Calm"),
     Solo("Solo Games"),
     Duo("Duo Games"),
 }
@@ -143,7 +144,7 @@ enum class Tool(
     Metronome("metronome", "Metronome", Icons.Filled.Timeline, GoogleColors.Red, Category.Time,
         listOf("tempo", "bpm", "beat", "rhythm", "tap", "music"), { MetronomeScreen(it) }),
 
-    Meditate("meditate", "Meditate", Icons.Filled.SelfImprovement, GoogleColors.Green, Category.Toys,
+    Meditate("meditate", "Meditate", Icons.Filled.SelfImprovement, GoogleColors.Green, Category.Calm,
         listOf("breathe", "breathing", "calm", "mindfulness", "relax"), { MeditateScreen(it) }),
     Fidget("fidget", "Fidget Spinner", ToolIcons.FidgetSpinner, GoogleColors.Blue, Category.Toys,
         listOf("spin", "toy", "stress", "relax", "fidget", "vibrate"), { FidgetSpinnerScreen(it) }),

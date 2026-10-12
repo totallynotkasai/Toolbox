@@ -2,6 +2,7 @@ package com.toolbox.app.toys.dial
 
 import com.toolbox.app.ui.common.PcmStream
 import com.toolbox.app.ui.common.Ping
+import com.toolbox.app.ui.common.jitter
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.math.PI
 import kotlin.math.abs
@@ -121,8 +122,6 @@ internal class DialAudio : PcmStream("dial-audio") {
         }
         voices.removeAll { it.done }
     }
-
-    private fun jitter(amount: Double) = 1.0 + (Random.nextDouble() - 0.5) * amount
 
     private companion object {
         const val SR = PcmStream.SAMPLE_RATE
