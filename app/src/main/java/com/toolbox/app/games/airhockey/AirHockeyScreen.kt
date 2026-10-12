@@ -1,11 +1,9 @@
 package com.toolbox.app.games.airhockey
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -13,14 +11,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -31,6 +22,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -51,19 +43,26 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.toolbox.app.ui.common.Tally
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import com.toolbox.app.ui.common.GameGuardDialog
+import com.toolbox.app.ui.common.GameModeChips
+import com.toolbox.app.ui.common.NewGameButton
+import com.toolbox.app.ui.common.ScoresMenu
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.rememberGameGuard
+import com.toolbox.app.ui.common.rememberGameMode
 import com.toolbox.app.ui.common.rememberHaptics
-import com.toolbox.app.ui.common.rememberPref
 import com.toolbox.app.ui.common.rememberTally
 import com.toolbox.app.ui.common.rememberToneSynth
 import com.toolbox.app.ui.theme.GoogleColors
 
-private enum class Mode(val label: String, val cpuSpeed: Float?, val cpuReaction: Float = 0f) {
-    // "Easy" is kept as the name because saved settings and win counts use it. Without the reaction time the
-    // computer read every shot perfectly and was close to unbeatable, however slow its mallet.
-    Easy("Solo", 1.3f, cpuReaction = 0.18f), TwoPlayer("2 players", null)
-}
+/**
+ * The computer's top mallet speed and reaction time in Solo. Without the reaction time it read every shot perfectly
+ * and was close to unbeatable, however slow its mallet.
+ */
+private const val CPU_SPEED = 1.3f
+private const val CPU_REACTION = 0.18f
 
 private val BOTTOM = GoogleColors.Blue
 private val TOP = GoogleColors.Red
@@ -72,41 +71,53 @@ private val TOP = GoogleColors.Red
 fun AirHockeyScreen(onBack: () -> Unit) {
     val haptics = rememberHaptics()
     val synth = rememberToneSynth()
-    var modeName by rememberPref("airhockey_mode", Mode.TwoPlayer.name)
-    val mode = Mode.entries.firstOrNull { it.name == modeName } ?: Mode.TwoPlayer
-    val (tally, setTally) = rememberTally("airhockey_tally_${mode.name}")
-    var menu by remember { mutableStateOf(false) }
+    val guard = rememberGameGuard()
+    var mode by rememberGameMode("airhockey_mode")
+    val tally = rememberTally("airhockey_tally_${mode.key}")
+    val currentTally by rememberUpdatedState(tally)
     // The match score is saved, so a recreated screen or a resized table carries on the same match, paused.
     var blue by rememberSaveable { mutableIntStateOf(0) }
     var red by rememberSaveable { mutableIntStateOf(0) }
     var finished by rememberSaveable { mutableStateOf(false) }
+    // Each new match gets a new table.
+    var match by rememberSaveable { mutableIntStateOf(0) }
+    var playing by remember { mutableStateOf(false) }
+    val underWay = !finished && (playing || blue + red > 0)
+
+    fun newMatch() {
+        blue = 0; red = 0
+        finished = false
+        playing = false
+        match++
+    }
+
+    // Leaving the app pauses the match, so it doesn't carry on the moment you come back.
+    LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { playing = false }
 
     ToolScaffold(
         title = "Air Hockey",
         onBack = onBack,
         actions = {
-            Box {
-                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More") }
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text("Reset match tally") }, onClick = { setTally(Tally()); menu = false })
-                }
-            }
+            NewGameButton(
+                onClick = { playing = false; guard.run(underWay, title = "Start a new match?", text = "The match in progress will be lost.", confirm = "New match") { newMatch() } },
+                enabled = playing || blue + red > 0 || finished,
+                description = "New match",
+            )
+            ScoresMenu(onReset = tally::reset, label = "Reset match tally")
         },
     ) { padding ->
         BoxWithConstraints(Modifier.fillMaxSize().padding(padding).padding(12.dp), contentAlignment = Alignment.Center) {
             // The table's shape follows the screen, within sensible limits, and the physics is built to match.
             val aspect = (maxHeight / maxWidth).coerceIn(1.35f, 2f)
-            val game = remember(aspect) { AirHockey(height = aspect, seed = System.nanoTime()).apply { resume(blue, red) } }
+            val game = remember(aspect, match) { AirHockey(height = aspect, seed = System.nanoTime()).apply { resume(blue, red) } }
+            // A table rebuilt for a new size carries on the match, but paused.
+            LaunchedEffect(aspect) { playing = false }
             var frame by remember { mutableLongStateOf(0L) }
-            var playing by remember(game) { mutableStateOf(false) }
-            val cpu = mode.cpuSpeed != null
-            game.malletSpeed[1] = mode.cpuSpeed ?: AirHockey.MALLET_MAX_SPEED
-            game.aiReaction = mode.cpuReaction
+            val cpu = mode.vsComputer
 
-            fun newMatch() {
-                game.reset()
-                blue = 0; red = 0
-                finished = false
+            LaunchedEffect(game, cpu) {
+                game.malletSpeed[1] = if (cpu) CPU_SPEED else AirHockey.MALLET_MAX_SPEED
+                game.aiReaction = if (cpu) CPU_REACTION else 0f
             }
 
             // Starts a match, or carries on one brought back part-way through.
@@ -139,7 +150,7 @@ fun AirHockeyScreen(onBack: () -> Unit) {
                         game.winner?.let { w ->
                             playing = false
                             finished = true
-                            setTally(tally.record(w + 1))
+                            currentTally.record(w + 1)
                         }
                         frame++
                     }
@@ -163,18 +174,13 @@ fun AirHockeyScreen(onBack: () -> Unit) {
                         }
                         MessageCard(if (finished) resultText(game, cpu, top = false) else "First to ${AirHockey.WIN_SCORE}")
                         Spacer(Modifier.height(16.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            for (m in Mode.entries) {
-                                FilterChip(
-                                    selected = m == mode,
-                                    onClick = { if (m != mode) { modeName = m.name; newMatch() } },
-                                    label = { Text(m.label, maxLines = 1) },
-                                )
-                            }
-                        }
+                        GameModeChips(mode, onSelect = { m ->
+                            guard.run(underWay, title = "Start a new match?", text = "The match in progress will be lost.", confirm = "New match") { mode = m; newMatch() }
+                        })
                         Spacer(Modifier.height(8.dp))
+                        val t = tally.value
                         Text(
-                            if (cpu) "Matches: You ${tally.a} · CPU ${tally.b}" else "Matches: Blue ${tally.a} · Red ${tally.b}",
+                            if (cpu) t.summary("Matches", "You", "CPU", withDraws = false) else t.summary("Matches", "Blue", "Red", withDraws = false),
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Spacer(Modifier.height(12.dp))
@@ -192,8 +198,8 @@ fun AirHockeyScreen(onBack: () -> Unit) {
             }
         }
     }
+    GameGuardDialog(guard)
 }
-
 /** The end-of-match line for the player at the [top] or bottom, with the score from their side. */
 private fun resultText(game: AirHockey, cpu: Boolean, top: Boolean): String {
     val w = game.winner ?: return ""

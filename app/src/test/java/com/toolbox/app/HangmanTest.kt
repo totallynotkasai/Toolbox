@@ -14,6 +14,13 @@ import kotlin.random.Random
 class HangmanTest {
     private fun HangmanState.guessAll(letters: String) = letters.fold(this) { s, c -> s.guess(c) }
 
+    @Test fun onlyPlayableSavedWordsAreBroughtBack() {
+        assertTrue(HangmanState.isWord("snowman"))
+        assertFalse(HangmanState.isWord(""))
+        assertFalse(HangmanState.isWord("Snow"))
+        assertFalse(HangmanState.isWord("snow man"))
+    }
+
     @Test fun hitsRevealAndMissesCount() {
         val s = HangmanState("castle").guessAll("atz")
         assertEquals("_ a _ t _ _", s.masked())

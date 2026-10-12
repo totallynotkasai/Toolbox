@@ -25,8 +25,11 @@ object Fleet {
         return cells.size == cells.toSet().size
     }
 
-    /** A random layout, with no two ships touching (even diagonally), which reads more clearly. */
-    fun random(random: Random = Random): List<Ship> {
+    /**
+     * A random layout. When [spaced], no two ships touch, even diagonally, which reads more clearly when you place
+     * your own fleet. Otherwise ships only can't overlap, so the squares around a sunk ship give nothing away.
+     */
+    fun random(random: Random = Random, spaced: Boolean = true): List<Ship> {
         while (true) {
             val ships = ArrayList<Ship>()
             val blocked = HashSet<Int>()
@@ -38,6 +41,7 @@ object Fleet {
                 val ship = options.random(random)
                 ships += ship
                 for (c in ship.cells) {
+                    if (!spaced) { blocked += c; continue }
                     val cx = c % GRID; val cy = c / GRID
                     for (dx in -1..1) for (dy in -1..1) {
                         val nx = cx + dx; val ny = cy + dy

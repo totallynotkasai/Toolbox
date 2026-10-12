@@ -95,3 +95,31 @@ private class PrefState<T>(private val store: Prefs, private val key: String, pr
 
     fun stopListening() = store.prefs.unregisterOnSharedPreferenceChangeListener(listener)
 }
+
+/**
+ * An enum setting saved under [nameOf] each constant (its name by default), so a constant can be renamed while
+ * keeping the value already saved. A missing or unknown value reads as [default].
+ */
+@Composable
+fun <E : Enum<E>> rememberEnumPref(key: String, default: E, entries: List<E>, nameOf: (E) -> String = { it.name }): MutableState<E> {
+    val stored = rememberPref(key, nameOf(default))
+    return remember(stored, entries) { EnumPrefState(stored, entries, default, nameOf) }
+}
+
+/** The constant of [entries] saved as [stored], or [default]. */
+fun <E> decodeEnum(stored: String, entries: List<E>, default: E, nameOf: (E) -> String): E =
+    entries.firstOrNull { nameOf(it) == stored } ?: default
+
+private class EnumPrefState<E>(
+    private val stored: MutableState<String>,
+    private val entries: List<E>,
+    private val default: E,
+    private val nameOf: (E) -> String,
+) : MutableState<E> {
+    override var value: E
+        get() = decodeEnum(stored.value, entries, default, nameOf)
+        set(v) { stored.value = nameOf(v) }
+
+    override fun component1(): E = value
+    override fun component2(): (E) -> Unit = { value = it }
+}
