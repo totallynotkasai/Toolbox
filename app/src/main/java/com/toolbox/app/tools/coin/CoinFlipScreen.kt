@@ -43,7 +43,6 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.OnShake
-import com.toolbox.app.ui.common.ShakeToggleButton
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.common.rememberShakeEnabled
@@ -108,7 +107,6 @@ fun CoinFlipScreen(onBack: () -> Unit) {
         title = "Flip a Coin",
         onBack = onBack,
         actions = {
-            ShakeToggleButton(shake, "flip")
             IconButton(onClick = { stats = CoinStats(); result = null }) {
                 Icon(Icons.Filled.RestartAlt, contentDescription = "Reset counts")
             }

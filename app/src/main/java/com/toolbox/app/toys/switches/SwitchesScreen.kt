@@ -54,7 +54,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.Vibes
-import com.toolbox.app.ui.common.VibesToggleButton
 import com.toolbox.app.ui.common.rememberPcmStream
 import com.toolbox.app.ui.common.rememberPref
 import com.toolbox.app.ui.common.rememberVibes
@@ -92,7 +91,7 @@ fun SwitchesScreen(onBack: () -> Unit) {
         total += 1
     }
 
-    ToolScaffold(title = "Clicky Switches", onBack = onBack, actions = { VibesToggleButton() }) { padding ->
+    ToolScaffold(title = "Clicky Switches", onBack = onBack) { padding ->
         Column(
             Modifier
                 .fillMaxSize()

@@ -12,7 +12,7 @@ import androidx.core.content.edit
 
 /**
  * Small typed settings store (String, Int, Long, Float, Boolean) for things like calibration offsets,
- * last-used units and the shake toggle. Best scores stay in [ScoreStore].
+ * last-used units and the vibration and shake switches. Best scores stay in [ScoreStore].
  */
 class Prefs(context: Context) {
     internal val prefs: SharedPreferences = context.getSharedPreferences("prefs", Context.MODE_PRIVATE)

@@ -42,7 +42,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.ToolScaffold
-import com.toolbox.app.ui.common.VibesToggleButton
 import com.toolbox.app.ui.common.rememberPcmStream
 import com.toolbox.app.ui.common.rememberPref
 import com.toolbox.app.ui.common.rememberVibes
@@ -153,7 +152,7 @@ fun BubbleWrapScreen(onBack: () -> Unit) {
         }
     }
 
-    ToolScaffold(title = "Bubble Wrap", onBack = onBack, actions = { VibesToggleButton() }) { padding ->
+    ToolScaffold(title = "Bubble Wrap", onBack = onBack) { padding ->
         Column(
             Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,

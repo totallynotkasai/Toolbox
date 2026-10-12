@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SearchOff
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.Card
@@ -69,10 +70,11 @@ private const val FAVOURITES = "favourites"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(onOpen: (Tool) -> Unit) {
+fun HomeScreen(onOpen: (Tool) -> Unit, startWithSettings: Boolean = false) {
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var query by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf<String?>(null) }
+    var showSettings by rememberSaveable { mutableStateOf(startWithSettings) }
     var storedFavourites by rememberPref(Favourites.PREF_KEY, "")
     val favourites = Favourites.parse(storedFavourites)
     val toggleFavourite = { tool: Tool -> storedFavourites = Favourites.toggle(storedFavourites, tool.route) }
@@ -88,6 +90,11 @@ fun HomeScreen(onOpen: (Tool) -> Unit) {
         topBar = {
             LargeTopAppBar(
                 title = { Text("Toolbox") },
+                actions = {
+                    IconButton(onClick = { showSettings = true }) {
+                        Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                    }
+                },
                 scrollBehavior = scroll,
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
@@ -130,6 +137,8 @@ fun HomeScreen(onOpen: (Tool) -> Unit) {
             }
         }
     }
+
+    if (showSettings) SettingsSheet(onDismiss = { showSettings = false })
 }
 
 private fun LazyGridScope.group(

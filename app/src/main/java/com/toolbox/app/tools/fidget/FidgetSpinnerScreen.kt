@@ -45,7 +45,6 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker1D
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
-import com.toolbox.app.ui.common.VibesToggleButton
 import com.toolbox.app.ui.common.rememberBestScore
 import com.toolbox.app.ui.common.rememberPcmStream
 import com.toolbox.app.ui.common.rememberVibes
@@ -103,7 +102,7 @@ fun FidgetSpinnerScreen(onBack: () -> Unit) {
                     if (omega == 0f) lastSpinSeconds = (clockMs - spinStartMs) / 1000f
                 }
                 audio.speed = omega
-                vibes.buzz(abs(omega) / MAX_SPEED, clockMs.toLong())
+                vibes.buzz(abs(omega) / MAX_SPEED)
             }
         }
     }
@@ -111,7 +110,7 @@ fun FidgetSpinnerScreen(onBack: () -> Unit) {
     val rpm = (abs(omega) / 6f).toInt()
     val bodyColor = GoogleColors.all[colorIndex]
 
-    ToolScaffold(title = "Fidget Spinner", onBack = onBack, actions = { VibesToggleButton() }) { padding ->
+    ToolScaffold(title = "Fidget Spinner", onBack = onBack) { padding ->
         ToolBody(padding) {
             Row(horizontalArrangement = Arrangement.spacedBy(32.dp)) {
                 Stat("RPM", "$rpm")

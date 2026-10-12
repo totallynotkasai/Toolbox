@@ -63,10 +63,8 @@ import com.toolbox.app.tools.coin.Vec3
 import com.toolbox.app.tools.coin.drawCoinShadow
 import com.toolbox.app.tools.coin.rememberCoinStats
 import com.toolbox.app.ui.common.OnShake
-import com.toolbox.app.ui.common.ShakeToggleButton
 import com.toolbox.app.ui.common.SteadyText
 import com.toolbox.app.ui.common.ToolScaffold
-import com.toolbox.app.ui.common.VibesToggleButton
 import com.toolbox.app.ui.common.rememberShakeEnabled
 import com.toolbox.app.ui.common.rememberToneSynth
 import com.toolbox.app.ui.common.rememberVibes
@@ -182,8 +180,6 @@ fun CoinTossScreen(onBack: () -> Unit) {
         title = "Coin Toss",
         onBack = onBack,
         actions = {
-            VibesToggleButton()
-            ShakeToggleButton(shake, "toss")
             IconButton(onClick = { stats = CoinStats(); result = null }) {
                 Icon(Icons.Filled.RestartAlt, contentDescription = "Reset counts")
             }
