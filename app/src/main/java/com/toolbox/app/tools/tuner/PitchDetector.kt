@@ -1,5 +1,6 @@
 package com.toolbox.app.tools.tuner
 
+import kotlin.math.abs
 import kotlin.math.log2
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
@@ -79,7 +80,6 @@ private val NOTE_NAMES = listOf("C", "C♯", "D", "D♯", "E", "F", "F♯", "G",
 data class Note(val midi: Int) {
     val name get() = NOTE_NAMES[((midi % 12) + 12) % 12]
     val octave get() = midi / 12 - 1
-    val frequency get() = 440.0 * Math.pow(2.0, (midi - 69) / 12.0)
     override fun toString() = "$name$octave"
 }
 
@@ -94,3 +94,7 @@ enum class Instrument(val label: String, val strings: List<Note>) {
     Ukulele("Ukulele", listOf(67, 60, 64, 69).map(::Note)),
     Violin("Violin", listOf(55, 62, 69, 76).map(::Note)),
 }
+
+/** The note [freq] is tuned against: the nearest note in Chromatic mode, otherwise the nearest of the strings. */
+fun Instrument.targetFor(freq: Float): Note =
+    if (this == Instrument.Chromatic) nearestNote(freq) else strings.minBy { abs(midiOf(freq) - it.midi) }

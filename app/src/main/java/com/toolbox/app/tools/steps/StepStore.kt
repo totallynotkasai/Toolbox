@@ -7,6 +7,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.Settings
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import java.time.Duration
@@ -14,13 +15,36 @@ import java.time.LocalDate
 import java.time.ZonedDateTime
 
 /**
- * Persists [StepState] in its own SharedPreferences file. Shared by the screen and [StepSnapshotJob]; both run on
- * the main thread, and [record] is synchronised anyway so a read-modify-write can never interleave.
+ * Persists [StepState] in its own SharedPreferences file, which is left out of backups and device transfers: its
+ * counter values only mean something on the phone, and since the boot, that recorded them. Shared by the screen
+ * and [StepSnapshotJob]. One copy of the state is kept for the whole process and every change goes through it under
+ * a lock, so the two can never undo each other's readings.
  */
 class StepStore(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences("steps", Context.MODE_PRIVATE)
+    private val app = context.applicationContext
+    private val prefs = app.getSharedPreferences("steps", Context.MODE_PRIVATE)
 
-    fun load(): StepState = StepState(
+    fun load(): StepState = synchronized(LOCK) { cached ?: read().also { cached = it; saved = it } }
+
+    /**
+     * Applies a counter reading taken now. With [throttle], as for the screen's stream of readings (about two a
+     * second while walking), the running count is saved at most once every [SAVE_EVERY_MS]; call [flush] when the
+     * screen stops. A new day or a reboot is always saved at once. Losing an unsaved count costs nothing: the next
+     * reading measures from the last saved one.
+     */
+    fun record(raw: Long, throttle: Boolean = false, today: Long = LocalDate.now().toEpochDay()): StepState = synchronized(LOCK) {
+        val now = System.currentTimeMillis()
+        val before = load()
+        val after = applyReading(before, raw, today, now, bootCount())
+        cached = after
+        if (!throttle || mustSave(before, after) || now - savedAt >= SAVE_EVERY_MS) write(after)
+        after
+    }
+
+    /** Saves a count held back by a throttled [record]. */
+    fun flush() = synchronized(LOCK) { cached?.let { if (it != saved) write(it) } }
+
+    private fun read() = StepState(
         day = prefs.getLong(DAY, 0),
         dayStartRaw = prefs.getLong(DAY_START_RAW, 0),
         lastRaw = prefs.getLong(LAST_RAW, 0),
@@ -28,30 +52,44 @@ class StepStore(context: Context) {
         lifetime = prefs.getLong(LIFETIME, 0),
         history = decodeHistory(prefs.getString(HISTORY, "") ?: ""),
         started = prefs.getBoolean(STARTED, false),
+        lastAt = prefs.getLong(LAST_AT, 0),
+        boot = prefs.getInt(BOOT, -1),
+        countingSince = prefs.getLong(COUNTING_SINCE, 0),
+        afterGap = prefs.getBoolean(AFTER_GAP, false),
+        gapSince = prefs.getLong(GAP_SINCE, 0),
     )
 
-    /** When counting began (first reading ever), in epoch millis; 0 if it hasn't yet. */
-    val startedAtMillis: Long get() = prefs.getLong(STARTED_AT, 0)
-
-    /** Applies a counter reading taken now and saves the result. */
-    fun record(raw: Long, today: Long = LocalDate.now().toEpochDay()): StepState = synchronized(LOCK) {
-        val before = load()
-        val after = applyReading(before, raw, today)
+    private fun write(s: StepState) {
+        val old = saved
         prefs.edit {
-            putLong(DAY, after.day)
-            putLong(DAY_START_RAW, after.dayStartRaw)
-            putLong(LAST_RAW, after.lastRaw)
-            putLong(CARRIED, after.carried)
-            putLong(LIFETIME, after.lifetime)
-            if (after.history != before.history) putString(HISTORY, encodeHistory(after.history))
-            putBoolean(STARTED, true)
-            if (!before.started) putLong(STARTED_AT, System.currentTimeMillis())
+            putLong(DAY, s.day)
+            putLong(DAY_START_RAW, s.dayStartRaw)
+            putLong(LAST_RAW, s.lastRaw)
+            putLong(CARRIED, s.carried)
+            putLong(LIFETIME, s.lifetime)
+            if (s.history != old?.history) putString(HISTORY, encodeHistory(s.history))
+            putBoolean(STARTED, s.started)
+            putLong(LAST_AT, s.lastAt)
+            putInt(BOOT, s.boot)
+            putLong(COUNTING_SINCE, s.countingSince)
+            putBoolean(AFTER_GAP, s.afterGap)
+            putLong(GAP_SINCE, s.gapSince)
         }
-        after
+        saved = s
+        savedAt = System.currentTimeMillis()
     }
+
+    /** How many times the phone has booted, which tells a reboot apart from a counter that simply went up. */
+    private fun bootCount(): Int = Settings.Global.getInt(app.contentResolver, Settings.Global.BOOT_COUNT, -1)
 
     private companion object {
         val LOCK = Any()
+        /** The state as of the latest reading, and as last written; null until first loaded. */
+        var cached: StepState? = null
+        var saved: StepState? = null
+        var savedAt = 0L
+        const val SAVE_EVERY_MS = 60_000L
+
         const val DAY = "day"
         const val DAY_START_RAW = "day_start_raw"
         const val LAST_RAW = "last_raw"
@@ -59,7 +97,11 @@ class StepStore(context: Context) {
         const val LIFETIME = "lifetime"
         const val HISTORY = "history"
         const val STARTED = "started"
-        const val STARTED_AT = "started_at"
+        const val LAST_AT = "last_at"
+        const val BOOT = "boot"
+        const val COUNTING_SINCE = "counting_since"
+        const val AFTER_GAP = "after_gap"
+        const val GAP_SINCE = "gap_since"
     }
 }
 

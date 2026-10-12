@@ -75,7 +75,9 @@ suspend fun AudioRecord.readFully(buffer: ShortArray): Boolean {
 /**
  * Records from the first of [sources] that opens, in blocks of [blockSize] samples, while [enabled] and the app is
  * started. The mic is released whenever the app leaves the foreground and reopened when it returns, so no other
- * app finds it busy. [onBlock] runs on a background thread for every full block; [onError] runs on the main thread
+ * app finds it busy. [onStart] runs on the main thread with the source that opened, each time recording starts.
+ * The first [discardBlocks] blocks after each start are dropped, because a mic's first buffers are often partly
+ * silent. [onBlock] runs on a background thread for every full block after that; [onError] runs on the main thread
  * if the mic can't be opened or stops delivering. The latest lambdas passed are always the ones called.
  */
 @RequiresPermission(Manifest.permission.RECORD_AUDIO)
@@ -86,14 +88,17 @@ fun MicEffect(
     sources: IntArray,
     enabled: Boolean = true,
     minBufferBytes: Int = blockSize * 2,
+    discardBlocks: Int = 0,
+    onStart: (audioSource: Int) -> Unit = {},
     onError: () -> Unit,
     onBlock: suspend (ShortArray) -> Unit,
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val currentSources by rememberUpdatedState(sources)
+    val currentOnStart by rememberUpdatedState(onStart)
     val currentOnError by rememberUpdatedState(onError)
     val currentOnBlock by rememberUpdatedState(onBlock)
-    LaunchedEffect(lifecycle, enabled, sampleRate, blockSize, minBufferBytes) {
+    LaunchedEffect(lifecycle, enabled, sampleRate, blockSize, minBufferBytes, discardBlocks) {
         if (!enabled) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             val ok = withContext(Dispatchers.Default) {
@@ -102,9 +107,11 @@ fun MicEffect(
                 try {
                     record.startRecording()
                     if (record.recordingState != AudioRecord.RECORDSTATE_RECORDING) return@withContext false
+                    withContext(Dispatchers.Main) { currentOnStart(record.audioSource) }
+                    var skip = discardBlocks
                     while (isActive) {
                         if (!record.readFully(buffer)) return@withContext !isActive
-                        currentOnBlock(buffer)
+                        if (skip > 0) skip-- else currentOnBlock(buffer)
                     }
                     true
                 } catch (_: IllegalStateException) {

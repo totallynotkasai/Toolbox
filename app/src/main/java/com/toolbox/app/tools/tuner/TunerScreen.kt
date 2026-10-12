@@ -103,14 +103,12 @@ private fun TunerContent() {
     }
 
     val f = frequency
-    val target: Note? = f?.let { hz ->
-        if (instrument == Instrument.Chromatic) nearestNote(hz)
-        else instrument.strings.minBy { abs(midiOf(hz) - it.midi) }
-    }
-    val rawCents = if (f != null && target != null) centsFrom(f, target).coerceIn(-50f, 50f) else 0f
+    val target: Note? = f?.let(instrument::targetFor)
+    // Off by more than 50 cents is possible against an instrument's strings; only the needle stops at its ends.
+    val cents = if (f != null && target != null) centsFrom(f, target) else 0f
     // The spring doubles as a low-pass filter so the needle doesn't jitter between frames.
-    val needle by animateFloatAsState(rawCents, spring(dampingRatio = 0.8f, stiffness = 120f), label = "needle")
-    val inTune = f != null && abs(rawCents) <= IN_TUNE_CENTS
+    val needle by animateFloatAsState(cents.coerceIn(-50f, 50f), spring(dampingRatio = 0.8f, stiffness = 120f), label = "needle")
+    val inTune = f != null && abs(cents) <= IN_TUNE_CENTS
     val accent by animateColorAsState(
         when { f == null -> MaterialTheme.colorScheme.outline; inTune -> GoogleColors.Green; else -> GoogleColors.Red },
         label = "accent",
@@ -166,13 +164,13 @@ private fun TunerContent() {
         when {
             f == null -> "Play a note"
             inTune -> "In tune · ${"%.1f".format(f)} Hz"
-            rawCents < 0 -> "Too low · ${"%.1f".format(f)} Hz"
+            cents < 0 -> "Too low · ${"%.1f".format(f)} Hz"
             else -> "Too high · ${"%.1f".format(f)} Hz"
         },
         style = MaterialTheme.typography.titleMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    if (target != null) Text("${target}  ${"%+.0f".format(rawCents)} cents", style = MaterialTheme.typography.bodyMedium)
+    if (target != null) Text("${target}  ${"%+.0f".format(cents)} cents", style = MaterialTheme.typography.bodyMedium)
 
     if (instrument != Instrument.Chromatic) {
         Spacer(Modifier.height(24.dp))
