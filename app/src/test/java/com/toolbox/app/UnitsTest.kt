@@ -54,7 +54,8 @@ class UnitsTest {
     }
 
     @Test fun everyUnitRoundTrips() {
-        for (category in UnitCategory.entries) {
+        // Cooking pairs only some units and snaps gas marks, so CookingTest covers it.
+        for (category in UnitCategory.entries - UnitCategory.Cooking) {
             for (a in category.units) for (b in category.units) {
                 for (v in listOf(0.37, 1.0, 12.5, 1234.5)) {
                     val back = convert(convert(v, a, b), b, a)
