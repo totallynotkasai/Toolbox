@@ -41,19 +41,21 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.core.content.edit
 import com.toolbox.app.Favourites
 import com.toolbox.app.ui.theme.GoogleColors
 
 /** Route of the tool on screen, provided by the nav host so [ToolScaffold] can show its favourite star. */
 val LocalToolRoute = staticCompositionLocalOf<String?> { null }
 
-/** Standard frame for every tool: centred title, back arrow, favourite star, optional actions. */
+/** Standard frame for every tool: centred title, back arrow, favourite star, optional actions and snackbars. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ToolScaffold(
     title: String,
     onBack: () -> Unit,
     actions: @Composable RowScope.() -> Unit = {},
+    snackbarHost: @Composable () -> Unit = {},
     content: @Composable (PaddingValues) -> Unit,
 ) {
     Scaffold(
@@ -74,6 +76,7 @@ fun ToolScaffold(
                 ),
             )
         },
+        snackbarHost = snackbarHost,
         containerColor = MaterialTheme.colorScheme.surface,
         // The keyboard pushes the body up instead of covering it; ToolBody and the scrolling screens then keep the
         // focused field in view.
@@ -131,7 +134,7 @@ class ScoreStore(context: Context) {
     fun submit(key: String, score: Int, lowerIsBetter: Boolean = false): Int {
         val old = prefs.getInt(key, 0)
         val better = if (lowerIsBetter) old == 0 || score < old else score > old
-        if (better) prefs.edit().putInt(key, score).apply()
+        if (better) prefs.edit { putInt(key, score) }
         return if (better) score else old
     }
 }

@@ -2,6 +2,8 @@ package com.toolbox.app.tools.units
 
 import java.math.BigDecimal
 import java.math.MathContext
+import java.text.DecimalFormatSymbols
+import java.util.Locale
 import kotlin.math.abs
 
 /**
@@ -183,29 +185,56 @@ enum class UnitCategory(val title: String, val units: List<UnitDef>, val default
 fun convert(value: Double, from: UnitDef, to: UnitDef): Double =
     if (from === to) value else to.fromBase(from.toBase(value))
 
+/** The [locale]'s decimal mark when it is "." or ","; other marks fall back to ".", which every keyboard has. */
+fun decimalMark(locale: Locale): Char =
+    DecimalFormatSymbols.getInstance(locale).decimalSeparator.takeIf { it == ',' } ?: '.'
+
 /**
- * Lenient number parsing for a text field: spaces and thousands commas are ignored ("1,000" = 1000),
- * a lone leading "." or "-" is allowed while typing, and anything else unparsable is null.
+ * Lenient number parsing for a text field, where [decimal] is the locale's decimal mark ("." or ","). Spaces are
+ * ignored, and so are thousands separators: "1,000" is 1000 and "1.000,5" is 1000.5 wherever you are.
+ *
+ * The other mark is read as a decimal point too when it can't be a thousands separator, so "1,5" is 1.5 in the UK
+ * and "1.5" is 1.5 in Germany, because some keyboards only offer one of the two. It counts as a thousands separator
+ * when it is followed by exactly three digits or appears more than once. A lone "-" or decimal mark is null.
  */
-fun parseNumber(text: String): Double? {
-    val cleaned = text.trim().replace(" ", "").replace(",", "")
-    if (cleaned.isEmpty() || cleaned == "-" || cleaned == "." || cleaned == "-.") return null
-    return cleaned.toDoubleOrNull()?.takeIf { it.isFinite() }
+fun parseNumber(text: String, decimal: Char = '.'): Double? {
+    val s = text.filterNot { it.isWhitespace() || it == ' ' || it == ' ' }
+    val other = if (decimal == ',') '.' else ','
+    val point = when {
+        // With both marks the last one is the decimal point, as in "1,000.5" and "1.000,5".
+        decimal in s && other in s -> if (s.lastIndexOf(decimal) > s.lastIndexOf(other)) decimal else other
+        decimal in s -> decimal
+        other in s && s.count { it == other } == 1 && s.substringAfter(other).takeWhile(Char::isDigit).length != 3 -> other
+        else -> null
+    }
+    if (point != null && s.count { it == point } > 1) return null
+    val plain = buildString {
+        for (c in s) when (c) {
+            point -> append('.')
+            '.', ',' -> {} // thousands separators
+            else -> append(c)
+        }
+    }
+    if (plain.isEmpty() || plain == "-" || plain == "." || plain == "-.") return null
+    return plain.toDoubleOrNull()?.takeIf { it.isFinite() }
 }
 
 /**
  * Human-friendly output: up to [significant] significant digits, no trailing zeros, no floating-point
  * noise (0.1 + 0.2 shows as 0.3), and scientific notation only for very large or tiny magnitudes.
- * Non-finite results come back as "—" so the UI never shows "Infinity".
+ * Non-finite results come back as "—" so the UI never shows "Infinity". [decimal] is the locale's decimal mark, so
+ * the text can be edited and read back by [parseNumber].
  */
-fun formatNumber(value: Double, significant: Int = 10): String {
+fun formatNumber(value: Double, significant: Int = 10, decimal: Char = '.'): String {
     if (!value.isFinite()) return "—"
     if (value == 0.0) return "0"
     val rounded = BigDecimal(value).round(MathContext(significant)).stripTrailingZeros()
     val magnitude = abs(rounded.toDouble())
-    if (magnitude >= 1e15 || magnitude < 1e-6) {
+    val text = if (magnitude >= 1e15 || magnitude < 1e-6) {
         // Scientific, e.g. "1.5e-9"; BigDecimal's own form is "1.5E-9".
-        return rounded.toString().replace("E+", "e").replace("E", "e")
+        rounded.toString().replace("E+", "e").replace("E", "e")
+    } else {
+        rounded.toPlainString()
     }
-    return rounded.toPlainString()
+    return text.replace('.', decimal)
 }

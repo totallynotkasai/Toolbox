@@ -42,6 +42,7 @@ import com.toolbox.app.tools.calculator.CalculatorEngine.PLUS
 import com.toolbox.app.tools.calculator.CalculatorEngine.TIMES
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberHaptics
+import java.math.BigDecimal
 
 private enum class KeyKind { Digit, Operator, Function, Equals }
 
@@ -64,11 +65,28 @@ fun CalculatorScreen(onBack: () -> Unit) {
     // After "=", a digit starts a new sum but an operator carries on from the answer.
     var showingResult by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf(false) }
+    // The last answer in full ("" for none). The display shows it to 12 digits, and carrying on from it uses every digit.
+    var answerText by rememberSaveable { mutableStateOf("") }
+    val answer = answerText.takeIf { it.isNotEmpty() }?.let(::BigDecimal)
+
+    fun showAnswer(value: BigDecimal) {
+        answerText = value.toString()
+        expr = CalculatorEngine.format(value)
+        showingResult = true
+    }
 
     fun press(key: CalcKey) {
         haptics.tick()
-        val base = if (showingResult && (key.kind == KeyKind.Digit && key.label != "±" || key.label == "( )")) "" else expr
+        val fresh = showingResult && (key.kind == KeyKind.Digit && key.label != "±" || key.label == "( )")
+        if (fresh || key.label == "C") answerText = ""
+        val base = if (fresh) "" else expr
         error = false
+        if (key.label == "=") {
+            if (CalculatorEngine.isUnfinished(expr)) return // "5+" waits for the next number
+            CalculatorEngine.evaluate(expr, answer)?.let(::showAnswer) ?: run { error = true }
+            return
+        }
+        if (key.label == "±" && showingResult && answer != null) return showAnswer(answer.negate())
         showingResult = false
         expr = when (key.label) {
             "C" -> ""
@@ -76,17 +94,18 @@ fun CalculatorScreen(onBack: () -> Unit) {
             "%" -> CalculatorEngine.percent(base)
             "±" -> CalculatorEngine.negate(base)
             "." -> CalculatorEngine.point(base)
-            "=" -> {
-                val v = CalculatorEngine.evaluate(expr)
-                when {
-                    expr.isEmpty() -> expr
-                    v == null -> { error = true; expr }
-                    else -> { showingResult = true; CalculatorEngine.resultExpression(v) }
-                }
-            }
             else -> if (key.kind == KeyKind.Operator) CalculatorEngine.operator(base, key.label[0])
             else CalculatorEngine.digit(base, key.label[0])
         }
+    }
+
+    fun backspace() {
+        haptics.tick()
+        error = false
+        showingResult = false
+        expr = CalculatorEngine.backspace(expr)
+        // Once the answer's own digits are edited, the edited digits are what count.
+        if (answer != null && !expr.startsWith(CalculatorEngine.format(answer))) answerText = ""
     }
 
     ToolScaffold(title = "Calculator", onBack = onBack) { padding ->
@@ -95,9 +114,10 @@ fun CalculatorScreen(onBack: () -> Unit) {
             val display = @Composable { modifier: Modifier ->
                 Display(
                     expr = expr,
-                    preview = if (error) "Can't work that out" else if (showingResult) null else CalculatorEngine.preview(expr)?.let(CalculatorEngine::format),
+                    preview = if (error) "Can't work that out" else if (showingResult) null else CalculatorEngine.preview(expr, answer)?.let(CalculatorEngine::format),
                     isError = error,
-                    onBackspace = { haptics.tick(); error = false; showingResult = false; expr = CalculatorEngine.backspace(expr) },
+                    isAnswer = showingResult,
+                    onBackspace = ::backspace,
                     modifier = modifier,
                 )
             }
@@ -118,7 +138,7 @@ fun CalculatorScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun Display(expr: String, preview: String?, isError: Boolean, onBackspace: () -> Unit, modifier: Modifier) {
+private fun Display(expr: String, preview: String?, isError: Boolean, isAnswer: Boolean, onBackspace: () -> Unit, modifier: Modifier) {
     Surface(modifier, shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainer) {
         Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.Bottom) {
             Spacer(Modifier.weight(1f))
@@ -136,7 +156,8 @@ private fun Display(expr: String, preview: String?, isError: Boolean, onBackspac
                 fontWeight = FontWeight.Light,
                 textAlign = TextAlign.End,
                 color = if (expr.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.fillMaxWidth(),
+                // The answer after "=" is read out; the sum being typed isn't, as each key already says what it is.
+                modifier = Modifier.fillMaxWidth().semantics { if (isAnswer) liveRegion = LiveRegionMode.Polite },
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(

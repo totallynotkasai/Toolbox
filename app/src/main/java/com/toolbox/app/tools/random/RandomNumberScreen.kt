@@ -9,10 +9,13 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.Button
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -26,8 +29,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.toolbox.app.ui.common.OnShake
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
@@ -44,24 +54,30 @@ fun RandomNumberScreen(onBack: () -> Unit) {
     val focus = LocalFocusManager.current
     var minText by rememberSaveable { mutableStateOf("1") }
     var maxText by rememberSaveable { mutableStateOf("100") }
-    var value by rememberSaveable { mutableStateOf<Long?>(null) }
-    var busy by remember { mutableStateOf(false) } // not saved: the shuffle that clears it doesn't survive a recreation
+    var result by rememberSaveable { mutableStateOf<Long?>(null) }
+    // What TalkBack reads out: the final number only, with "again" when it repeats so the change is still announced.
+    var spoken by rememberSaveable { mutableStateOf("") }
+    // Not saved: the shuffle that clears them doesn't survive a recreation.
+    var busy by remember { mutableStateOf(false) }
+    var shuffle by remember { mutableStateOf<Long?>(null) }
 
     val min = minText.toLongOrNull()
     val max = maxText.toLongOrNull()
-    val valid = min != null && max != null && min <= max
+    val problem = rangeProblem(minText, maxText)
 
     fun generate() {
-        if (!valid || busy) return
+        if (problem != null || busy || min == null || max == null) return
         focus.clearFocus()
         val lo = min; val hi = max
         busy = true
         scope.launch {
             // A quick shuffle through values before revealing the real one.
-            repeat(8) { value = Random.nextLong(lo, hi + 1); haptics.tick(); delay(45L + it * 12) }
-            value = Random.nextLong(lo, hi + 1)
-            haptics.heavy()
+            repeat(8) { shuffle = Random.nextLong(lo, hi + 1); haptics.tick(); delay(45L + it * 12) }
+            val v = Random.nextLong(lo, hi + 1)
+            spoken = if (v == result && spoken == "$v") "$v again" else "$v"
+            result = v
             busy = false
+            haptics.heavy()
         }
     }
 
@@ -73,37 +89,93 @@ fun RandomNumberScreen(onBack: () -> Unit) {
         onBack = onBack,
     ) { padding ->
         ToolBody(padding) {
+            val big = MaterialTheme.typography.displayLarge.fontSize * 1.6f
             AnimatedContent(
-                targetState = value,
+                targetState = if (busy) shuffle else result,
                 transitionSpec = { (slideInVertically { it / 2 } + fadeIn()) togetherWith (slideOutVertically { -it / 2 } + fadeOut()) },
+                contentAlignment = Alignment.Center,
                 label = "number",
+                modifier = Modifier.fillMaxWidth().clearAndSetSemantics {
+                    contentDescription = spoken.ifEmpty { "No number yet" }
+                    liveRegion = LiveRegionMode.Polite
+                },
             ) { v ->
-                Text(v?.toString() ?: "?", style = MaterialTheme.typography.displayLarge.copy(fontSize = MaterialTheme.typography.displayLarge.fontSize * 1.6f))
+                // Long numbers shrink to stay on one line.
+                Text(
+                    v?.toString() ?: "?",
+                    style = MaterialTheme.typography.displayLarge.copy(fontSize = big, lineHeight = big * 1.1f),
+                    maxLines = 1,
+                    softWrap = false,
+                    textAlign = TextAlign.Center,
+                    autoSize = TextAutoSize.StepBased(minFontSize = 28.sp, maxFontSize = big),
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
             Spacer(Modifier.height(40.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                NumberField("Min", minText) { minText = it }
+            Row(
+                Modifier.widthIn(max = 400.dp).fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                NumberField("Min", "minimum", minText, isError = problem?.min == true, modifier = Modifier.weight(1f)) { minText = it }
                 Text("to")
-                NumberField("Max", maxText) { maxText = it }
+                NumberField("Max", "maximum", maxText, isError = problem?.max == true, modifier = Modifier.weight(1f)) { maxText = it }
             }
-            if (!valid) {
+            if (problem != null) {
                 Spacer(Modifier.height(8.dp))
-                Text("Min must be less than or equal to max", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    problem.message,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                )
             }
             Spacer(Modifier.height(24.dp))
-            Button(onClick = ::generate, enabled = valid && !busy) { Text("Generate") }
+            Button(onClick = ::generate, enabled = problem == null && !busy) { Text("Generate") }
         }
     }
 }
 
+/** Why the range can't be used, with which fields are at fault, or null when it's fine. */
+internal data class RangeProblem(val message: String, val min: Boolean, val max: Boolean)
+
+internal fun rangeProblem(minText: String, maxText: String): RangeProblem? {
+    val min = minText.toLongOrNull()
+    val max = maxText.toLongOrNull()
+    return when {
+        min == null && max == null -> RangeProblem("Enter a minimum and a maximum", min = true, max = true)
+        min == null -> RangeProblem("Enter a minimum", min = true, max = false)
+        max == null -> RangeProblem("Enter a maximum", min = false, max = true)
+        min > max -> RangeProblem("The minimum is bigger than the maximum", min = true, max = true)
+        else -> null
+    }
+}
+
+/** A whole-number field with its own ± key, because some number keyboards have no minus. */
 @Composable
-private fun NumberField(label: String, text: String, onChange: (String) -> Unit) {
+private fun NumberField(
+    label: String,
+    spokenName: String,
+    text: String,
+    isError: Boolean,
+    modifier: Modifier,
+    onChange: (String) -> Unit,
+) {
+    fun accept(s: String) { if (s.length <= 12 && s.matches(Regex("-?\\d*"))) onChange(s) }
     OutlinedTextField(
         value = text,
-        onValueChange = { s -> if (s.length <= 12 && s.matches(Regex("-?\\d*"))) onChange(s) },
+        onValueChange = ::accept,
         label = { Text(label) },
         singleLine = true,
+        isError = isError,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        modifier = Modifier.width(120.dp),
+        trailingIcon = {
+            IconButton(
+                onClick = { accept(if (text.startsWith("-")) text.drop(1) else "-$text") },
+                modifier = Modifier.semantics { contentDescription = "Change the sign of the $spokenName" },
+            ) { Text("±", style = MaterialTheme.typography.titleLarge) }
+        },
+        modifier = modifier,
     )
 }

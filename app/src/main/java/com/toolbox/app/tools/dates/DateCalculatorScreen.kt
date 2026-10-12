@@ -42,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -64,10 +65,17 @@ import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.common.rememberPref
+import kotlinx.coroutines.delay
+import java.time.Duration
 import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.time.temporal.ChronoUnit
@@ -82,7 +90,7 @@ private fun LocalDate.full(): String = format(fullDate)
 @Composable
 fun DateCalculatorScreen(onBack: () -> Unit) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
-    val today = remember { LocalDate.now() }
+    val today = rememberToday()
 
     ToolScaffold(title = "Date Calculator", onBack = onBack) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
@@ -113,6 +121,10 @@ private fun BetweenTab(today: LocalDate) {
     var start by rememberSaveable { mutableLongStateOf(today.toEpochDay()) }
     var end by rememberSaveable { mutableLongStateOf(today.plusMonths(1).toEpochDay()) }
     var includeEnd by rememberSaveable { mutableStateOf(false) }
+    OnNewDay(today) { old, new ->
+        if (start == old) start = new
+        if (end == old) end = new
+    }
     val diff = dateDiff(LocalDate.ofEpochDay(start), LocalDate.ofEpochDay(end), includeEnd)
 
     DateField("Start date", start, today, onPick = { start = it })
@@ -163,6 +175,7 @@ private fun AddTab(today: LocalDate) {
     var subtract by rememberSaveable { mutableStateOf(false) }
     var amountText by rememberSaveable { mutableStateOf("30") }
     var step by rememberSaveable { mutableStateOf(DateStep.Days) }
+    OnNewDay(today) { old, new -> if (start == old) start = new }
     val amount = amountText.toLongOrNull()
     val shift = amount?.let { shiftDate(LocalDate.ofEpochDay(start), if (subtract) -it else it, step) }
 
@@ -261,6 +274,7 @@ private fun AgeTab(today: LocalDate) {
     // The birth date is remembered, so opening the tab again shows your own age straight away.
     var birth by rememberPref("dates_birth_epoch_day", today.minusYears(30).toEpochDay())
     var asOf by rememberSaveable { mutableLongStateOf(today.toEpochDay()) }
+    OnNewDay(today) { old, new -> if (asOf == old) asOf = new }
     val birthDate = LocalDate.ofEpochDay(birth)
     val age = ageOn(birthDate, LocalDate.ofEpochDay(asOf))
 
@@ -285,7 +299,8 @@ private fun AgeTab(today: LocalDate) {
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
         )
-        if (age.months != 0 || age.days != 0) {
+        // On a 29 February birthday counted on 1 March, the age is a year and a day: the day isn't worth saying.
+        if (!age.isBirthday && (age.months != 0 || age.days != 0)) {
             Text(
                 "and " + describeYmd(0, age.months, age.days),
                 style = MaterialTheme.typography.titleMedium,
@@ -318,6 +333,39 @@ private fun AgeTab(today: LocalDate) {
 }
 
 // ---- Shared pieces ----
+
+/** Today's date. It moves on at midnight while the screen is showing, and is checked again whenever it comes back. */
+@Composable
+private fun rememberToday(): LocalDate {
+    var today by remember { mutableStateOf(LocalDate.now()) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                today = LocalDate.now()
+                val midnight = today.plusDays(1).atStartOfDay(ZoneId.systemDefault())
+                delay(Duration.between(ZonedDateTime.now(), midnight).toMillis().coerceAtLeast(0) + 500)
+            }
+        }
+    }
+    return today
+}
+
+/**
+ * Calls [onChange] with the old and new epoch days when [today] moves on, so a date field left on today can follow
+ * it instead of showing yesterday.
+ */
+@Composable
+private fun OnNewDay(today: LocalDate, onChange: (old: Long, new: Long) -> Unit) {
+    var seen by rememberSaveable { mutableLongStateOf(today.toEpochDay()) }
+    LaunchedEffect(today) {
+        val new = today.toEpochDay()
+        if (new != seen) {
+            onChange(seen, new)
+            seen = new
+        }
+    }
+}
 
 /** A tappable date "field" that opens the Material date picker; the trailing button jumps to today. */
 @OptIn(ExperimentalMaterial3Api::class)

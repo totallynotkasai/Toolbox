@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -29,7 +28,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.center
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -38,10 +39,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import com.toolbox.app.ui.common.OnShake
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
@@ -52,6 +57,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlin.random.Random
 
 /** The 20 classic answers: 10 yes, 5 non-committal, 5 no. */
@@ -63,7 +69,72 @@ internal val EIGHT_BALL_ANSWERS = listOf(
 )
 
 private val TRIANGLE_BLUE = Color(0xFF2336A8)
-private val ANSWER_TEXT = Color(0xFFDCE4FF)
+private val ANSWER_STYLE = TextStyle(
+    color = Color(0xFFDCE4FF),
+    lineHeight = 1.1.em,
+    letterSpacing = 0.04.em,
+    fontWeight = FontWeight.Bold,
+    textAlign = TextAlign.Center,
+)
+
+/**
+ * An answer fitted inside the triangle. Sizes and positions are fractions of the triangle's circumradius, measured
+ * from its centre: [fontSize], and the vertical [centres] of the [lines], top to bottom.
+ */
+internal data class AnswerFit(val fontSize: Float, val lines: List<String>, val centres: List<Float>)
+
+private const val LINE_HEIGHT = 1.1f
+private const val LARGEST = 0.155f
+private const val SMALLEST = 0.08f
+
+/** Width of the triangle at height [y], for a triangle of circumradius 1 pointing up (apex −1, base 0.5). */
+internal fun triangleWidthAt(y: Float): Float = 2f * (y + 1f) / sqrt(3f)
+
+/**
+ * Fits [text] into the answer triangle at the largest font size that needs no word broken, wrapping it so each line
+ * fits the triangle's width at the line's top edge, where it is narrowest. [width] measures a line's width at a font
+ * size of 1. The block sits a little below the centre, where the triangle is wide, and moves down only as far as the
+ * base allows.
+ */
+internal fun fitAnswer(text: String, width: (String) -> Float): AnswerFit {
+    val words = text.split(' ').filter { it.isNotEmpty() }
+    var size = LARGEST
+    while (true) {
+        for (count in 1..4) {
+            val lineHeight = size * LINE_HEIGHT
+            val block = count * lineHeight
+            val top = minOf(0.2f, 0.44f - block / 2) - block / 2
+            val lines = wrap(words, count, size, width) { i -> triangleWidthAt(top + i * lineHeight) - 0.1f }
+            if (lines != null) return AnswerFit(size, lines, List(lines.size) { top + (it + 0.5f) * lineHeight })
+        }
+        if (size <= SMALLEST) break
+        size = maxOf(SMALLEST, size - 0.005f)
+    }
+    // Nothing fits even at the smallest size: one word per line, which no real answer needs.
+    val lineHeight = size * LINE_HEIGHT
+    val top = 0.44f - words.size * lineHeight
+    return AnswerFit(size, words, List(words.size) { top + (it + 0.5f) * lineHeight })
+}
+
+/** Greedy wrap into at most [count] lines, line i being at most [room] wide; null if it doesn't fit. */
+private fun wrap(words: List<String>, count: Int, size: Float, width: (String) -> Float, room: (Int) -> Float): List<String>? {
+    val lines = mutableListOf<String>()
+    var current = ""
+    for (word in words) {
+        val joined = if (current.isEmpty()) word else "$current $word"
+        current = when {
+            width(joined) * size <= room(lines.size) -> joined
+            current.isEmpty() -> return null // a single word too wide for its line
+            else -> {
+                lines += current
+                if (lines.size >= count || width(word) * size > room(lines.size)) return null
+                word
+            }
+        }
+    }
+    if (current.isNotEmpty()) lines += current
+    return lines.takeIf { it.size <= count }
+}
 
 @Composable
 fun EightBallScreen(onBack: () -> Unit) {
@@ -146,6 +217,7 @@ fun EightBallScreen(onBack: () -> Unit) {
                 val triR = windowR * 0.9f // circumradius of the answer triangle
                 Canvas(Modifier.fillMaxSize()) { drawBall() }
                 val dens = LocalDensity.current
+                val measurer = rememberTextMeasurer()
                 val a = answer
                 Box(
                     Modifier
@@ -159,35 +231,40 @@ fun EightBallScreen(onBack: () -> Unit) {
                         },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Canvas(Modifier.fillMaxSize()) {
-                        val r = triR.toPx()
-                        val c = center + Offset(0f, -r * 0.08f)
-                        val path = Path().apply {
-                            for (i in 0 until 3) {
-                                val ang = -PI / 2 + i * 2 * PI / 3
-                                val p = c + Offset(r * cos(ang).toFloat(), r * sin(ang).toFloat())
-                                if (i == 0) moveTo(p.x, p.y) else lineTo(p.x, p.y)
+                    // The answer is fitted to the triangle line by line, then drawn; it's measured once per answer.
+                    val fit = remember(a, measurer) {
+                        a?.let { i ->
+                            val reference = with(dens) { 100.sp.toPx() }
+                            fitAnswer(EIGHT_BALL_ANSWERS[i].uppercase()) { line ->
+                                measurer.measure(line, ANSWER_STYLE.copy(fontSize = 100.sp)).size.width / reference
                             }
-                            close()
                         }
-                        drawPath(path, TRIANGLE_BLUE)
-                        drawPath(path, Color.White.copy(alpha = 0.12f), style = Stroke(r * 0.03f))
                     }
-                    if (a != null) {
-                        val fontPx = with(dens) { (triR * 0.155f).toSp() }
-                        Text(
-                            EIGHT_BALL_ANSWERS[a].uppercase(),
-                            color = ANSWER_TEXT,
-                            fontSize = fontPx,
-                            lineHeight = 1.1.em,
-                            letterSpacing = 0.04.em,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier
-                                .width(triR * 1.12f)
-                                .graphicsLayer { translationY = with(dens) { (triR * 0.12f).toPx() } },
-                        )
-                    }
+                    Spacer(
+                        Modifier.fillMaxSize().drawWithCache {
+                            val r = triR.toPx()
+                            val c = size.center + Offset(0f, -r * 0.08f)
+                            val path = Path().apply {
+                                for (i in 0 until 3) {
+                                    val ang = -PI / 2 + i * 2 * PI / 3
+                                    val p = c + Offset(r * cos(ang).toFloat(), r * sin(ang).toFloat())
+                                    if (i == 0) moveTo(p.x, p.y) else lineTo(p.x, p.y)
+                                }
+                                close()
+                            }
+                            val lines = fit?.let { f ->
+                                val style = ANSWER_STYLE.copy(fontSize = (f.fontSize * r).toSp())
+                                f.lines.mapIndexed { i, line -> measurer.measure(line, style) to f.centres[i] }
+                            }.orEmpty()
+                            onDrawBehind {
+                                drawPath(path, TRIANGLE_BLUE)
+                                drawPath(path, Color.White.copy(alpha = 0.12f), style = Stroke(r * 0.03f))
+                                for ((layout, y) in lines) {
+                                    drawText(layout, topLeft = c + Offset(-layout.size.width / 2f, y * r - layout.size.height / 2f))
+                                }
+                            }
+                        },
+                    )
                 }
             }
             Spacer(Modifier.height(32.dp))
