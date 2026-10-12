@@ -50,6 +50,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
@@ -58,6 +59,8 @@ import androidx.lifecycle.compose.LifecycleStartEffect
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberAnnouncer
+import com.toolbox.app.ui.common.rememberEnumPref
+import com.toolbox.app.ui.common.rememberPref
 import kotlinx.coroutines.launch
 
 private const val MIN_BPM = 30
@@ -75,9 +78,10 @@ private fun tempoName(bpm: Int) = when {
 @Composable
 fun MetronomeScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
-    var bpm by rememberSaveable { mutableIntStateOf(100) }
-    var beats by rememberSaveable { mutableIntStateOf(4) }
-    var accent by rememberSaveable { mutableStateOf(true) }
+    var bpm by rememberPref("metronome_bpm", 100)
+    var signature by rememberEnumPref("metronome_signature", TimeSignature.FourFour, TimeSignature.entries)
+    var accent by rememberPref("metronome_accent", true)
+    var subdivision by rememberEnumPref("metronome_subdivision", Subdivision.Off, Subdivision.entries)
     var playing by rememberSaveable { mutableStateOf(false) }
     var currentBeat by remember { mutableIntStateOf(-1) }
     val pulse = remember { Animatable(1f) }
@@ -90,8 +94,9 @@ fun MetronomeScreen(onBack: () -> Unit) {
         }
     }
     engine.bpm = bpm
-    engine.beatsPerBar = beats
-    engine.accentFirstBeat = accent
+    val accents = signature.accents(accent)
+    engine.accents = accents
+    engine.subdivision = subdivision.count
     // Like every other sound in the app, it stops when you leave; it shows as stopped when you come back. A theme or
     // font change (or a large screen turning) recreates the screen without leaving, so it carries on through that.
     val activity = LocalActivity.current
@@ -153,8 +158,13 @@ fun MetronomeScreen(onBack: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(24.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                repeat(beats) { i -> BeatDot(active = playing && i == currentBeat, accent = accent && i == 0) }
+            // Subdivisions don't add dots; 6/8's two groups of three get a wider gap between them.
+            Row(horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.CenterVertically) {
+                accents.indices.chunked(signature.group).forEach { group ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        group.forEach { i -> BeatDot(active = playing && i == currentBeat, accent = accents[i]) }
+                    }
+                }
             }
             Spacer(Modifier.height(24.dp))
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.widthIn(max = 420.dp)) {
@@ -171,17 +181,33 @@ fun MetronomeScreen(onBack: () -> Unit) {
                 FilledTonalIconButton(onClick = { nudge(1) }) { Icon(Icons.Filled.Add, "Faster") }
             }
             Spacer(Modifier.height(16.dp))
-            // Wraps at large font sizes. TalkBack hears "4 beats per bar" rather than a fraction.
+            // The chip rows wrap at large font sizes. TalkBack hears "4 beats per bar" rather than a fraction.
+            ChipHeading("Time signature")
             FlowRow(
-                Modifier.selectableGroup().semantics { contentDescription = "Time signature" },
+                Modifier.selectableGroup(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
             ) {
-                listOf(2, 3, 4, 6).forEach { b ->
+                TimeSignature.entries.forEach { s ->
                     FilterChip(
-                        selected = beats == b,
-                        onClick = { beats = b },
-                        label = { Text("$b/4") },
-                        modifier = Modifier.semantics { contentDescription = "$b beats per bar" },
+                        selected = signature == s,
+                        onClick = { signature = s },
+                        label = { Text(s.label) },
+                        modifier = Modifier.semantics { contentDescription = s.description },
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            ChipHeading("Subdivision")
+            FlowRow(
+                Modifier.selectableGroup(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            ) {
+                Subdivision.entries.forEach { s ->
+                    FilterChip(
+                        selected = subdivision == s,
+                        onClick = { subdivision = s },
+                        label = { Text(s.label) },
+                        modifier = Modifier.semantics { contentDescription = s.description },
                     )
                 }
             }
@@ -196,7 +222,7 @@ fun MetronomeScreen(onBack: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text("Accent first beat")
+                Text(if (signature == TimeSignature.SixEight) "Accent beats 1 and 4" else "Accent first beat")
                 Switch(checked = accent, onCheckedChange = null)
             }
             Spacer(Modifier.height(24.dp))
@@ -224,15 +250,31 @@ fun MetronomeScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun BeatDot(active: Boolean, accent: Boolean) {
+private fun ChipHeading(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(bottom = 4.dp).semantics { heading() },
+    )
+}
+
+@Composable
+private fun BeatDot(active: Boolean, accent: Accent) {
     val color by animateColorAsState(
         when {
-            active && accent -> MaterialTheme.colorScheme.tertiary
-            active -> MaterialTheme.colorScheme.primary
-            else -> MaterialTheme.colorScheme.surfaceContainerHighest
+            !active -> MaterialTheme.colorScheme.surfaceContainerHighest
+            accent == Accent.Strong -> MaterialTheme.colorScheme.tertiary
+            accent == Accent.Light -> MaterialTheme.colorScheme.secondary
+            else -> MaterialTheme.colorScheme.primary
         },
         animationSpec = tween(60),
         label = "beat",
     )
-    Box(Modifier.size(if (accent) 22.dp else 18.dp).clip(CircleShape).background(color))
+    val size = when (accent) {
+        Accent.Strong -> 22.dp
+        Accent.Light -> 20.dp
+        Accent.Normal -> 18.dp
+    }
+    Box(Modifier.size(size).clip(CircleShape).background(color))
 }
