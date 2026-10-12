@@ -20,14 +20,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -41,7 +39,9 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import com.toolbox.app.ui.common.GameLoop
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.rememberGameLoop
 import com.toolbox.app.ui.common.rememberPcmStream
 import com.toolbox.app.ui.common.rememberSensorListener
 import com.toolbox.app.ui.common.toDisplayAxes
@@ -56,6 +56,8 @@ import kotlin.math.sin
 
 private const val EARTH = 9.81f
 private const val G_SCALE = 0.9f // m/s² → tube widths/s²; grains take a few seconds to fall the length
+private const val REST_SECONDS = 0.5f // settled this long, the loop sleeps
+private const val WAKE_TILT = 0.4f    // m/s² of change in the phone's tilt that wakes a sleeping stick
 
 /** Vibration strength for a collision rate (summed hit intensity per second; a full pour is ~300-500). */
 internal fun rainVibration(rate: Float): Float = (rate / 450f).coerceIn(0f, 1f).pow(0.7f) * 0.75f
@@ -97,36 +99,42 @@ fun RainStickScreen(onBack: () -> Unit) {
     // In-plane gravity from the accelerometer, in screen axes (x right, y down), lightly smoothed. Raw
     // accelerometer rather than TYPE_GRAVITY on purpose: a shake then rattles the grains too.
     val gravity = remember { FloatArray(2) }
+    val rest = remember { Rest() }
     val view = LocalView.current
+    lateinit var loop: GameLoop
     val hasSensor = rememberSensorListener(Sensor.TYPE_ACCELEROMETER) { e ->
         // Read per reading: a large screen can turn 180° without the screen being recreated.
         val (x, y) = toDisplayAxes(e.values[0], e.values[1], view.display?.rotation ?: Surface.ROTATION_0)
         gravity[0] += (-x - gravity[0]) * 0.3f
         gravity[1] += (y - gravity[1]) * 0.3f
+        if (rest.asleep && hypot(gravity[0] - rest.gx, gravity[1] - rest.gy) > WAKE_TILT) {
+            rest.asleep = false
+            loop.wake()
+        }
     }
 
-    LaunchedEffect(sim) {
-        var last = 0L
-        var rate = 0f
-        while (true) {
-            withFrameNanos { now ->
-                val dt = if (last == 0L) 0f else ((now - last) / 1e9f).coerceAtMost(0.05f)
-                last = now
-                if (dt > 0f) {
-                    // Lying flat on a table there's no useful tilt, so fall back to "down the screen";
-                    // the Flip button still works then because it turns the tube itself.
-                    val tilt = if (hasSensor) ((hypot(gravity[0], gravity[1]) - 1.5f) / 3f).coerceIn(0f, 1f) else 0f
-                    val sx = gravity[0] * tilt
-                    val sy = gravity[1] * tilt + EARTH * (1f - tilt)
-                    val (gx, gy) = toTubeFrame(sx, sy, tubeAngle)
-                    sim.step(dt, gx * G_SCALE, gy * G_SCALE)
-                    if (sim.hitCount > 0) audio.post(sim.hits.copyOf(sim.hitCount))
-                    rate += (sim.hitEnergy / dt - rate) * min(1f, dt * 10f)
-                    vibes.buzz(rainVibration(rate))
-                    tick++
-                }
-            }
+    // Frame loop: the sim, its sound and the rumble. Once the grains have settled it sleeps, until the phone is
+    // tilted or the stick flipped; a 200-grain sim redrawn at 120 Hz is a lot of battery for a still picture.
+    loop = rememberGameLoop { dt ->
+        if (dt > 0f) {
+            // Lying flat on a table there's no useful tilt, so fall back to "down the screen";
+            // the Flip button still works then because it turns the tube itself.
+            val tilt = if (hasSensor) ((hypot(gravity[0], gravity[1]) - 1.5f) / 3f).coerceIn(0f, 1f) else 0f
+            val sx = gravity[0] * tilt
+            val sy = gravity[1] * tilt + EARTH * (1f - tilt)
+            val (gx, gy) = toTubeFrame(sx, sy, tubeAngle)
+            sim.step(dt, gx * G_SCALE, gy * G_SCALE)
+            if (sim.hitCount > 0) audio.post(sim.hits.copyOf(sim.hitCount))
+            rest.rate += (sim.hitEnergy / dt - rest.rate) * min(1f, dt * 10f)
+            vibes.buzz(rainVibration(rest.rate))
+            tick++
+            val still = sim.hitEnergy == 0f && sim.fastest() < RainStickSim.SETTLED_SPEED && tubeAngle == flips * 180f
+            rest.seconds = if (still) rest.seconds + dt else 0f
         }
+        if (rest.seconds < REST_SECONDS) return@rememberGameLoop true
+        vibes.stopBuzz()
+        rest.sleep(gravity)
+        false
     }
 
     val glass = MaterialTheme.colorScheme.onSurface
@@ -148,12 +156,29 @@ fun RainStickScreen(onBack: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(8.dp))
-            FilledTonalButton(onClick = { flips++; vibes.click(0.3f) }) {
+            FilledTonalButton(onClick = { flips++; vibes.click(0.3f); rest.asleep = false; loop.wake() }) {
                 Icon(Icons.Filled.SwapVert, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text("Flip")
             }
         }
+    }
+}
+
+/** Whether the stick's frame loop has gone to sleep, and the tilt it went to sleep at. */
+private class Rest {
+    var seconds = 0f // how long the grains have been still
+    var rate = 0f    // smoothed collision rate, for the rumble
+    var asleep = false
+    var gx = 0f
+    var gy = 0f
+
+    fun sleep(gravity: FloatArray) {
+        asleep = true
+        seconds = 0f
+        rate = 0f
+        gx = gravity[0]
+        gy = gravity[1]
     }
 }
 

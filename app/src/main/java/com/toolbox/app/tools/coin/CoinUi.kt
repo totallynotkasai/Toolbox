@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
+import com.toolbox.app.ui.common.Stat
 import com.toolbox.app.ui.common.rememberPref
 
 /** [CoinStats] persisted under [key], so the counts carry on across visits. */
@@ -40,8 +41,8 @@ fun CoinStatsPanel(stats: CoinStats, modifier: Modifier = Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Row(horizontalArrangement = Arrangement.spacedBy(40.dp)) {
             val shares = stats.percentages()
-            Stat("Heads", stats.heads, shares?.first)
-            Stat("Tails", stats.tails, shares?.second)
+            Stat(shareLabel("Heads", shares?.first), "${stats.heads}")
+            Stat(shareLabel("Tails", shares?.second), "${stats.tails}")
         }
         Text(
             stats.streakText() ?: " ",
@@ -69,17 +70,7 @@ fun CoinStatsPanel(stats: CoinStats, modifier: Modifier = Modifier) {
     }
 }
 
-@Composable
-private fun Stat(label: String, value: Int, percent: Int?) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("$value", style = MaterialTheme.typography.headlineMedium)
-        Text(
-            if (percent != null) "$label · $percent%" else label,
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
+private fun shareLabel(label: String, percent: Int?) = if (percent != null) "$label · $percent%" else label
 
 /** Shared by every chip: the paths are built once. */
 private val chipArt by lazy { CoinArt() }
