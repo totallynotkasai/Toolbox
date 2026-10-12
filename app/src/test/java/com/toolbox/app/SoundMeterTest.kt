@@ -1,10 +1,15 @@
 package com.toolbox.app
 
+import android.media.MediaRecorder
 import com.toolbox.app.tools.soundmeter.FLOOR_DBFS
 import com.toolbox.app.tools.soundmeter.LevelStats
+import com.toolbox.app.tools.soundmeter.OFFSET_MAX
+import com.toolbox.app.tools.soundmeter.OFFSET_MIN
 import com.toolbox.app.tools.soundmeter.PeakHold
 import com.toolbox.app.tools.soundmeter.ReferenceLevel
 import com.toolbox.app.tools.soundmeter.Zone
+import com.toolbox.app.tools.soundmeter.defaultOffset
+import com.toolbox.app.tools.soundmeter.offsetPrefKey
 import com.toolbox.app.tools.soundmeter.referenceFor
 import com.toolbox.app.tools.soundmeter.rmsDbfs
 import com.toolbox.app.tools.soundmeter.zoneFor
@@ -14,8 +19,28 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.PI
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 class SoundMeterTest {
+    @Test fun defaultCalibrationMatchesTheSpecsLevels() {
+        // Android's compatibility spec: 94 dB SPL reads an RMS of 520 on UNPROCESSED; 90 dB reads 2500 on
+        // VOICE_RECOGNITION. Each default turns that back into about the right SPL.
+        val unprocessed = ShortArray(44_100) { (520 * sqrt(2.0) * sin(2 * PI * 1000 * it / 44_100)).toInt().toShort() }
+        val voice = ShortArray(44_100) { (2500 * sqrt(2.0) * sin(2 * PI * 1000 * it / 44_100)).toInt().toShort() }
+        assertEquals(94f, rmsDbfs(unprocessed) + defaultOffset(MediaRecorder.AudioSource.UNPROCESSED), 0.5f)
+        assertEquals(90f, rmsDbfs(voice) + defaultOffset(MediaRecorder.AudioSource.VOICE_RECOGNITION), 0.5f)
+        assertEquals(defaultOffset(MediaRecorder.AudioSource.VOICE_RECOGNITION), defaultOffset(MediaRecorder.AudioSource.MIC))
+        listOf(MediaRecorder.AudioSource.UNPROCESSED, MediaRecorder.AudioSource.VOICE_RECOGNITION, MediaRecorder.AudioSource.MIC)
+            .forEach { assertTrue(defaultOffset(it) in OFFSET_MIN..OFFSET_MAX) }
+    }
+
+    @Test fun eachSourceKeepsItsOwnOffset() {
+        val keys = listOf(MediaRecorder.AudioSource.UNPROCESSED, MediaRecorder.AudioSource.VOICE_RECOGNITION, MediaRecorder.AudioSource.MIC)
+            .map(::offsetPrefKey)
+        assertEquals(3, keys.toSet().size)
+        assertTrue(keys.none { it == "soundmeter_offset" }) // the old shared key, migrated on first use
+    }
+
     @Test fun fullScaleSineIsMinus3dBfs() {
         val s = ShortArray(44_100) { (32767 * sin(2 * PI * 1000 * it / 44_100)).toInt().toShort() }
         assertEquals(-3.01f, rmsDbfs(s), 0.05f)

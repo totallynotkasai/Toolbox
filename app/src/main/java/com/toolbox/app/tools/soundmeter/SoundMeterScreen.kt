@@ -1,6 +1,7 @@
 package com.toolbox.app.tools.soundmeter
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.media.MediaRecorder
 import android.os.SystemClock
 import androidx.compose.animation.animateColorAsState
@@ -47,7 +48,6 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -65,6 +65,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -74,9 +75,11 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.edit
 import com.toolbox.app.ui.common.KeepScreenOn
 import com.toolbox.app.ui.common.MicEffect
 import com.toolbox.app.ui.common.MicPermissionGate
+import com.toolbox.app.ui.common.Prefs
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.common.rememberPref
@@ -91,12 +94,13 @@ import kotlin.math.sin
 private const val SAMPLE_RATE = 44_100
 private const val BLOCK = SAMPLE_RATE / 10 // ~100 ms per reading
 private const val HISTORY_SIZE = 300       // 30 s of readings
-private const val DEFAULT_OFFSET = 90f
+private const val DISCARD_BLOCKS = 2        // the first ~200 ms after the mic starts, which is often partly silent
 private const val GAUGE_MIN = 20f
 private const val GAUGE_MAX = 120f
 private const val GAUGE_START = 150f       // degrees, clockwise from 3 o'clock
 private const val GAUGE_SWEEP = 240f
-private const val PREF_OFFSET = "soundmeter_offset"
+/** Older versions kept one offset for every source. */
+private const val LEGACY_PREF_OFFSET = "soundmeter_offset"
 
 private val ZONE_COLORS = mapOf(
     Zone.Quiet to GoogleColors.Green,
@@ -104,6 +108,22 @@ private val ZONE_COLORS = mapOf(
     Zone.Loud to GoogleColors.Yellow,
     Zone.Harmful to GoogleColors.Red,
 )
+
+/**
+ * Moves an offset saved by older versions, under one key for every source, to the key for [source]: the source the
+ * mic opened with, which is the one it was calibrated against. It runs once; the old key is removed afterwards.
+ */
+private fun migrateOldOffset(context: Context, source: Int) {
+    val store = Prefs(context)
+    if (!store.prefs.contains(LEGACY_PREF_OFFSET)) return
+    if (!store.prefs.contains(offsetPrefKey(source))) {
+        store.put(offsetPrefKey(source), store.get(LEGACY_PREF_OFFSET, defaultOffset(source)))
+    }
+    store.prefs.edit { remove(LEGACY_PREF_OFFSET) }
+}
+
+/** Min, Leq and Max so far, in dBFS; NaN before the first reading. */
+private data class Summary(val min: Float = Float.NaN, val avg: Float = Float.NaN, val max: Float = Float.NaN)
 
 @Composable
 fun SoundMeterScreen(onBack: () -> Unit) {
@@ -132,7 +152,6 @@ fun SoundMeterScreen(onBack: () -> Unit) {
 private fun SoundMeterContent(calibrating: Boolean, onCalibrationDone: () -> Unit) {
     val context = LocalContext.current
     val haptics = rememberHaptics()
-    var offset by rememberPref(PREF_OFFSET, DEFAULT_OFFSET)
     var running by rememberSaveable { mutableStateOf(true) }
     var micFailed by remember { mutableStateOf(false) }
     val unprocessed = remember { supportsUnprocessedMic(context) }
@@ -142,8 +161,8 @@ private fun SoundMeterContent(calibrating: Boolean, onCalibrationDone: () -> Uni
     val stats = remember { LevelStats() }
     val peak = remember { PeakHold() }
     var peakValue by remember { mutableFloatStateOf(Float.NaN) }
+    var summary by remember { mutableStateOf(Summary()) }
     var history by remember { mutableStateOf(FloatArray(0)) }
-    var tick by remember { mutableIntStateOf(0) } // Bumped per reading so the stats text recomposes.
 
     KeepScreenOn(running)
 
@@ -155,15 +174,28 @@ private fun SoundMeterContent(calibrating: Boolean, onCalibrationDone: () -> Uni
             add(MediaRecorder.AudioSource.MIC)
         }.toIntArray()
     }
-    MicEffect(SAMPLE_RATE, BLOCK, sources, enabled = running, onError = { micFailed = true }) { buffer ->
+    // The source the mic opened with. Until it opens, the offset shown is for the source it will most likely use.
+    var source by rememberSaveable { mutableStateOf<Int?>(null) }
+    val calibrated = source ?: sources.first()
+    var offset by rememberPref(offsetPrefKey(calibrated), defaultOffset(calibrated))
+
+    MicEffect(
+        SAMPLE_RATE,
+        BLOCK,
+        sources,
+        enabled = running,
+        discardBlocks = DISCARD_BLOCKS,
+        onStart = { opened -> migrateOldOffset(context, opened); source = opened },
+        onError = { micFailed = true },
+    ) { buffer ->
         val db = rmsDbfs(buffer)
         val now = SystemClock.uptimeMillis()
         withContext(Dispatchers.Main) {
             level = db
             stats.add(db)
+            summary = Summary(stats.min, stats.leq, stats.max)
             peakValue = peak.update(db, now)
             history = (if (history.size >= HISTORY_SIZE) history.copyOfRange(1, history.size) else history) + db
-            tick++
         }
     }
 
@@ -181,13 +213,11 @@ private fun SoundMeterContent(calibrating: Boolean, onCalibrationDone: () -> Uni
         modifier = Modifier.widthIn(max = 320.dp).fillMaxWidth().aspectRatio(1.25f),
     )
     Spacer(Modifier.height(8.dp))
-    tick.let { // Read so this block recomposes with each reading.
-        StatsRow(
-            min = stats.min.takeUnless { it.isNaN() }?.let(::display),
-            avg = stats.leq.takeUnless { it.isNaN() }?.let(::display),
-            max = stats.max.takeUnless { it.isNaN() }?.let(::display),
-        )
-    }
+    StatsRow(
+        min = summary.min.takeUnless { it.isNaN() }?.let(::display),
+        avg = summary.avg.takeUnless { it.isNaN() }?.let(::display),
+        max = summary.max.takeUnless { it.isNaN() }?.let(::display),
+    )
     Spacer(Modifier.height(16.dp))
     HistoryGraph(history, offset, Modifier.widthIn(max = 480.dp).fillMaxWidth().height(140.dp))
     Spacer(Modifier.height(16.dp))
@@ -198,7 +228,7 @@ private fun SoundMeterContent(calibrating: Boolean, onCalibrationDone: () -> Uni
             Text(if (running) "Pause" else "Resume")
         }
         OutlinedButton(onClick = {
-            haptics.click(); stats.reset(); peak.reset(); peakValue = Float.NaN; history = FloatArray(0); tick++
+            haptics.click(); stats.reset(); summary = Summary(); peak.reset(); peakValue = Float.NaN; history = FloatArray(0)
         }) {
             Icon(Icons.Filled.RestartAlt, contentDescription = null, Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
@@ -219,8 +249,10 @@ private fun SoundMeterContent(calibrating: Boolean, onCalibrationDone: () -> Uni
     if (calibrating) {
         CalibrationSheet(
             offset = offset,
+            default = defaultOffset(calibrated),
             live = shown,
-            unprocessed = unprocessed,
+            source = source,
+            unprocessedSupported = unprocessed,
             onChange = { offset = it },
             onDismiss = onCalibrationDone,
         )
@@ -244,7 +276,7 @@ private fun Gauge(db: Float, peak: Float, modifier: Modifier) {
         }
     }
 
-    Box(modifier.semantics { contentDescription = if (valid) "${db.roundToInt()} decibels, ${zone.label}" else "Listening" },
+    Box(modifier.semantics { contentDescription = if (valid) "About ${db.roundToInt()} decibels, ${zone.label}" else "Listening" },
         contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             val stroke = 16.dp.toPx()
@@ -280,8 +312,11 @@ private fun Gauge(db: Float, peak: Float, modifier: Modifier) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(if (valid) "${db.roundToInt()}" else "–", style = MaterialTheme.typography.displayLarge, fontWeight = FontWeight.Medium)
-                Text(" dB", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 10.dp))
+                // Phone mics aren't calibrated and the reading isn't weighted, so the unit says it's approximate.
+                Column(Modifier.padding(start = 6.dp, bottom = 10.dp)) {
+                    Text("approx.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("dB", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             Text(if (valid) zone.label else "Listening…", style = MaterialTheme.typography.titleMedium, color = if (valid) color else tickColor)
         }
@@ -368,7 +403,9 @@ private fun ReferenceScale(db: Float, modifier: Modifier) {
                 ) {
                     Box(Modifier.size(10.dp).clip(CircleShape).background(ZONE_COLORS.getValue(zoneFor(ref.db.toFloat()))))
                     Spacer(Modifier.width(12.dp))
-                    Text("${ref.db} dB", style = MaterialTheme.typography.labelLarge, modifier = Modifier.width(56.dp))
+                    Text("${ref.db} dB", style = MaterialTheme.typography.labelLarge, maxLines = 1,
+                        // Grows with the font size, so "120 dB" stays on one line.
+                        modifier = Modifier.width((56 * LocalDensity.current.fontScale).dp))
                     Text(ref.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     if (active) Text("≈ now", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
                 }
@@ -379,7 +416,15 @@ private fun ReferenceScale(db: Float, modifier: Modifier) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CalibrationSheet(offset: Float, live: Float, unprocessed: Boolean, onChange: (Float) -> Unit, onDismiss: () -> Unit) {
+private fun CalibrationSheet(
+    offset: Float,
+    default: Float,
+    live: Float,
+    source: Int?,
+    unprocessedSupported: Boolean,
+    onChange: (Float) -> Unit,
+    onDismiss: () -> Unit,
+) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).navigationBarsPadding()) {
@@ -402,20 +447,29 @@ private fun CalibrationSheet(offset: Float, live: Float, unprocessed: Boolean, o
             Slider(
                 value = offset,
                 onValueChange = { onChange(it.roundToInt().toFloat()) },
-                valueRange = 60f..120f,
-                steps = 59,
+                valueRange = OFFSET_MIN..OFFSET_MAX,
+                steps = (OFFSET_MAX - OFFSET_MIN).toInt() - 1,
                 modifier = Modifier.semantics { contentDescription = "Calibration offset" },
             )
-            TextButton(onClick = { onChange(DEFAULT_OFFSET) }, enabled = offset != DEFAULT_OFFSET) {
-                Text("Reset to +${DEFAULT_OFFSET.roundToInt()} dB")
+            TextButton(onClick = { onChange(default) }, enabled = offset != default) {
+                Text("Reset to +${default.roundToInt()} dB")
             }
-            Text(
-                if (unprocessed) "Using the phone's unprocessed microphone, the most accurate option."
-                else "This phone has no unprocessed microphone input, so very loud or very quiet sounds may read less accurately.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            sourceNote(source, unprocessedSupported)?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             Spacer(Modifier.height(16.dp))
         }
     }
+}
+
+/** Which input the mic opened with, which can differ from the best the phone offers; null until it opens. */
+private fun sourceNote(source: Int?, unprocessedSupported: Boolean): String? = when (source) {
+    null -> null
+    MediaRecorder.AudioSource.UNPROCESSED -> "Using the phone's unprocessed microphone input, the most accurate option."
+    MediaRecorder.AudioSource.VOICE_RECOGNITION -> if (unprocessedSupported) {
+        "Using the voice recognition input, because the unprocessed input wouldn't open. Very loud or very quiet sounds may read less accurately."
+    } else {
+        "Using the voice recognition input. This phone has no unprocessed input, so very loud or very quiet sounds may read less accurately."
+    }
+    else -> "Using the standard microphone input, which can even out loud and quiet sounds, so readings may be less accurate."
 }

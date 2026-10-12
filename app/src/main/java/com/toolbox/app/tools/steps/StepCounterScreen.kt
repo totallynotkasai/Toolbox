@@ -72,6 +72,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleStartEffect
 import com.toolbox.app.ui.common.PermissionGate
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberHaptics
@@ -188,11 +189,16 @@ private fun CounterContent(settings: StepSettings, onEditGoal: () -> Unit) {
     }
     rememberSensorListener(Sensor.TYPE_STEP_COUNTER, rate = SensorManager.SENSOR_DELAY_UI) { e ->
         today = LocalDate.now().toEpochDay()
-        state = store.record(e.values[0].toLong(), today)
+        state = store.record(e.values[0].toLong(), throttle = true, today = today)
     }
-    // The very first session starts with the first reading.
+    // Readings arrive with every step or two, so the store saves them now and then, and once more on leaving.
+    LifecycleStartEffect(store) { onStopOrDispose { store.flush() } }
+    // The very first session starts with the first reading. A session that starts beyond the lifetime count was
+    // restored from a backup without the step data, so it starts again too.
     LaunchedEffect(state.started) {
-        if (state.started && sessionMillis == 0L) { sessionStart = state.lifetime; sessionMillis = System.currentTimeMillis() }
+        if (state.started && (sessionMillis == 0L || sessionStart > state.lifetime)) {
+            sessionStart = state.lifetime; sessionMillis = System.currentTimeMillis()
+        }
     }
 
     val steps = if (state.started) state.totalFor(today) ?: 0L else 0L
@@ -210,12 +216,14 @@ private fun CounterContent(settings: StepSettings, onEditGoal: () -> Unit) {
     WeekCard(state, today, settings.goal)
     Spacer(Modifier.height(12.dp))
 
-    val startedAt = store.startedAtMillis
-    val firstDay = startedAt != 0L && Instant.ofEpochMilli(startedAt).atZone(ZoneId.systemDefault()).toLocalDate().toEpochDay() == today
+    val since = state.countingSince.takeIf { state.started && state.day == today && it != 0L }?.let(::formatTime)
     Text(
         when {
             !state.started -> "Waiting for the step sensor. Take a few steps."
-            firstDay -> "Counting since ${formatTime(startedAt)}. Steps from earlier today can't be recovered. From tomorrow, steps are counted from midnight, even with the app closed."
+            since != null && state.afterGap -> "Counting since $since. " +
+                (if (state.gapSince != 0L) "No readings since ${formatSince(state.gapSince)}" else "There was a gap of over a day with no readings") +
+                ", so the steps in between can't be put on a day."
+            since != null -> "Counting since $since. Steps from earlier today can't be recovered. From tomorrow, steps are counted from midnight, even with the app closed."
             else -> "Counted from midnight, even with the app closed. Distance and calories are estimates."
         },
         style = MaterialTheme.typography.bodySmall,
@@ -322,6 +330,8 @@ private fun WeekCard(state: StepState, today: Long, goal: Int) {
     val totals = days.map { state.totalFor(it) ?: if (it == today && state.started) 0L else null }
     var selected by rememberSaveable { mutableIntStateOf(6) }
     val known = totals.filterNotNull()
+    // Today isn't over, so it would pull the average down every morning.
+    val finished = totals.dropLast(1).filterNotNull()
     val measurer = rememberTextMeasurer()
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
     val track = MaterialTheme.colorScheme.surfaceContainerHighest
@@ -345,8 +355,8 @@ private fun WeekCard(state: StepState, today: Long, goal: Int) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Last 7 days", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                if (known.isNotEmpty()) {
-                    Text("Avg %,d / day".format(known.sum() / known.size), style = MaterialTheme.typography.labelLarge,
+                if (finished.isNotEmpty()) {
+                    Text("Avg %,d / day".format(finished.sum() / finished.size), style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }

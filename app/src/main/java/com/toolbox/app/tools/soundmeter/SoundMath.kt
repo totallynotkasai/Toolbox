@@ -1,11 +1,31 @@
 package com.toolbox.app.tools.soundmeter
 
+import android.media.MediaRecorder
 import kotlin.math.log10
 import kotlin.math.pow
 import kotlin.math.sqrt
 
 /** Quietest level reported, so digital silence doesn't give -Infinity. */
 const val FLOOR_DBFS = -120f
+
+/** The calibration slider's range, in dB added to the dBFS reading. */
+const val OFFSET_MIN = 60f
+const val OFFSET_MAX = 150f
+
+/**
+ * Starting calibration for a mic source (a MediaRecorder.AudioSource value), from the levels Android's
+ * compatibility spec asks phones to record: on UNPROCESSED, 94 dB SPL at 1 kHz reads an RMS of 520 (about −36 dBFS);
+ * on VOICE_RECOGNITION, 90 dB SPL reads 2500 (about −22 dBFS). The plain MIC path has no target, so it shares the
+ * voice recognition figure.
+ */
+fun defaultOffset(source: Int): Float = if (source == MediaRecorder.AudioSource.UNPROCESSED) 130f else 112f
+
+/** Each source is calibrated separately, because they record at levels about 18 dB apart. */
+fun offsetPrefKey(source: Int): String = "soundmeter_offset_" + when (source) {
+    MediaRecorder.AudioSource.UNPROCESSED -> "unprocessed"
+    MediaRecorder.AudioSource.VOICE_RECOGNITION -> "voice"
+    else -> "mic"
+}
 
 /**
  * RMS level of the first [count] 16-bit samples in dB relative to full scale (0 dBFS = the loudest possible signal).

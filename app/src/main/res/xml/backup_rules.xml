@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Backups on Android 8 to 11. The step counter's state holds counter values that only mean something on this
+     phone and since its last boot, so restoring them would credit thousands of steps to one day. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="steps.xml" />
+</full-backup-content>

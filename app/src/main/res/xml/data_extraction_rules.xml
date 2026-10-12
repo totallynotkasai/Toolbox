@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Backups and phone-to-phone transfers on Android 12 and later. The step counter's state holds counter values that
+     only mean something on this phone and since its last boot, so restoring them would credit thousands of steps to
+     one day. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="steps.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="steps.xml" />
+    </device-transfer>
+</data-extraction-rules>
