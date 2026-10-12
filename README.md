@@ -28,6 +28,8 @@ Search finds a tool by its name, category or keywords ("decibel" finds the Sound
 
 The microphone (Tuner, Sound Meter) and physical activity (Step Counter) are asked for only when their screen first opens. The Step Counter also starts after a reboot so the day's count carries on.
 
+Notifications are asked for the first time a timer starts. They show the Timer's countdown, and its Stop and +1 min buttons, outside the app. Without them the alarm still rings, and opening Toolbox stops it. The Timer sets an alarm-clock alarm so it rings on time with the phone asleep, and plays the phone's alarm sound at alarm volume until it is stopped. A timer that is running when the phone restarts is lost.
+
 ## Building
 
 Requires JDK 17 or newer and the Android SDK; the JDK bundled with Android Studio works. Open the folder in Android Studio and press Run, or:

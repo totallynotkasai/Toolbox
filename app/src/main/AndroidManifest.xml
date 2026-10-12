@@ -9,6 +9,16 @@
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <!-- Step counter: lets its persisted midnight/hourly snapshot jobs survive a reboot. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Timer: its countdown and alarm notifications; asked for when a timer is first started (API 33+). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Timer: the alarm that ends it fires on time even when the phone is asleep. USE_EXACT_ALARM is granted at
+         install from API 33 and is meant for alarm and timer apps; API 31-32 need SCHEDULE_EXACT_ALARM instead. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <!-- Timer: TimerAlarmService plays the alarm until it's stopped. systemExempted is the type Android allows for
+         continuing an alarm by apps that hold USE_EXACT_ALARM. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
 
     <!-- Every hardware feature is optional; each tool shows "not supported" instead. -->
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
@@ -43,5 +53,16 @@
             android:name=".tools.steps.StepSnapshotJob"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- Timer: the alarm that ends it, and the buttons on its notification. -->
+        <receiver
+            android:name=".tools.timer.TimerReceiver"
+            android:exported="false" />
+
+        <!-- Timer: runs only while the alarm is ringing. -->
+        <service
+            android:name=".tools.timer.TimerAlarmService"
+            android:exported="false"
+            android:foregroundServiceType="systemExempted" />
     </application>
 </manifest>
