@@ -1,6 +1,7 @@
 package com.toolbox.app.tools.metronome
 
 import android.os.SystemClock
+import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -65,7 +66,7 @@ fun MetronomeScreen(onBack: () -> Unit) {
     var bpm by rememberSaveable { mutableIntStateOf(100) }
     var beats by rememberSaveable { mutableIntStateOf(4) }
     var accent by rememberSaveable { mutableStateOf(true) }
-    var playing by remember { mutableStateOf(false) }
+    var playing by rememberSaveable { mutableStateOf(false) }
     var currentBeat by remember { mutableIntStateOf(-1) }
     val pulse = remember { Animatable(1f) }
     val taps = remember { ArrayDeque<Long>() }
@@ -79,12 +80,15 @@ fun MetronomeScreen(onBack: () -> Unit) {
     engine.bpm = bpm
     engine.beatsPerBar = beats
     engine.accentFirstBeat = accent
-    // Like every other sound in the app, it stops when you leave; it shows as stopped when you come back.
+    // Like every other sound in the app, it stops when you leave; it shows as stopped when you come back. A theme or
+    // font change (or a large screen turning) recreates the screen without leaving, so it carries on through that.
+    val activity = LocalActivity.current
     LifecycleStartEffect(engine) {
+        if (playing) engine.start()
         onStopOrDispose {
             engine.stop()
-            playing = false
             currentBeat = -1
+            if (activity?.isChangingConfigurations != true) playing = false
         }
     }
 

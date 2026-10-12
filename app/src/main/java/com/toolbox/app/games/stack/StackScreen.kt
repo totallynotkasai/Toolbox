@@ -19,6 +19,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -60,21 +62,25 @@ private const val DEPTH = 0.05f
 /** A sliced-off piece tumbling away; [y] is how far it has fallen, in play-area widths. */
 private class Falling(val cut: StackGame.Offcut, var y: Float = 0f, var vy: Float = 0f, var angle: Float = 0f, val spin: Float)
 
+/** How far the view rises to keep the top of [game]'s tower in sight. */
+private fun cameraFor(game: StackGame): Float = max(0f, game.tower.size * BLOCK_H - 0.9f)
+
 private fun blockColor(level: Int): Color = Color.hsv((205f + level * 9f) % 360f, 0.5f, 0.93f)
 
 @Composable
 fun StackScreen(onBack: () -> Unit) {
     val haptics = rememberHaptics()
     val synth = rememberToneSynth()
-    val game = remember { StackGame() }
+    // Saved, so a recreated screen carries on with the same tower.
+    val game = rememberSaveable(saver = Saver(save = { it.save() }, restore = { StackGame().apply { restore(it) } })) { StackGame() }
     val (best, submitBest) = rememberBestScore("stack")
     var frame by remember { mutableLongStateOf(0L) }
     var state by remember { mutableStateOf(game.state) }
-    var score by remember { mutableIntStateOf(0) }
+    var score by remember { mutableIntStateOf(game.score) }
     var perfectLabel by remember { mutableStateOf<String?>(null) }
     var perfectAge by remember { mutableStateOf(1f) } // seconds since the last perfect, for the ring and label
     val falling = remember { mutableListOf<Falling>() }
-    var camera by remember { mutableStateOf(0f) } // how far the view has risen, in play-area widths
+    var camera by remember { mutableStateOf(cameraFor(game)) } // how far the view has risen, in play-area widths
     var wake by remember { mutableIntStateOf(0) }
 
     fun tap() {
@@ -118,7 +124,7 @@ fun StackScreen(onBack: () -> Unit) {
     LaunchedEffect(wake) {
         var last = withFrameNanos { it }
         while (true) {
-            val targetCamera = max(0f, game.tower.size * BLOCK_H - 0.9f)
+            val targetCamera = cameraFor(game)
             val cameraMoving = kotlin.math.abs(targetCamera - camera) > 0.0005f
             if (game.state != StackGame.State.Playing && falling.isEmpty() && !cameraMoving && perfectAge >= 1f) break
             withFrameNanos { now ->

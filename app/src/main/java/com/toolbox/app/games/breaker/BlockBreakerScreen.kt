@@ -26,6 +26,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -157,6 +158,22 @@ private class Breaker(val mode: Mode, private val onHit: (strong: Boolean) -> Un
 
     fun restart() {
         bricks = buildBricks(1); score = 0; lives = 3; level = 1; over = false
+        resetRound()
+    }
+
+    /**
+     * The game as ints for saved state: level, score, lives, game over, then each brick's hits left (0 once broken).
+     * A level's layout is rebuilt from its seed, so the bricks themselves needn't be stored.
+     */
+    fun save(): IntArray = intArrayOf(level, score, lives, if (over) 1 else 0) + bricks.map { if (it.alive) it.hp else 0 }
+
+    /** Restores [save]d state with the ball back on the paddle, so nothing moves until the next tap. */
+    fun restore(saved: IntArray) {
+        level = saved[0]; score = saved[1]; lives = saved[2]; over = saved[3] == 1
+        bricks = buildBricks(level).onEachIndexed { i, b ->
+            val hp = saved.getOrElse(4 + i) { b.hp }
+            if (hp <= 0) b.alive = false else b.hp = hp
+        }
         resetRound()
     }
 
@@ -310,7 +327,10 @@ private class Breaker(val mode: Mode, private val onHit: (strong: Boolean) -> Un
 fun BlockBreakerScreen(onBack: () -> Unit) {
     val haptics = rememberHaptics()
     var mode by rememberSaveable { mutableStateOf(Mode.Classic) }
-    val game = remember(mode) { Breaker(mode) { strong -> if (strong) haptics.heavy() else haptics.tick() } }
+    val onHit = { strong: Boolean -> if (strong) haptics.heavy() else haptics.tick() }
+    val game = rememberSaveable(mode, saver = Saver(save = { it.save() }, restore = { Breaker(mode, onHit).apply { restore(it) } })) {
+        Breaker(mode, onHit)
+    }
     var frame by remember { mutableLongStateOf(0L) }
     val (best, submit) = rememberBestScore(if (mode == Mode.Classic) "breaker" else "breaker-action")
     val measurer = rememberTextMeasurer()

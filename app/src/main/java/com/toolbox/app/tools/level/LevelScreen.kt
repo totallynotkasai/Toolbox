@@ -1,6 +1,7 @@
 package com.toolbox.app.tools.level
 
 import android.hardware.Sensor
+import android.view.Surface
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Spacer
@@ -18,10 +19,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberSensorListener
+import com.toolbox.app.ui.common.toDisplayAxes
 import com.toolbox.app.ui.theme.GoogleColors
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -34,8 +37,11 @@ fun LevelScreen(onBack: () -> Unit) {
     var pitch by remember { mutableFloatStateOf(0f) } // degrees, front/back tilt
     var roll by remember { mutableFloatStateOf(0f) }  // degrees, left/right tilt
 
+    val view = LocalView.current
     val available = rememberSensorListener(Sensor.TYPE_GRAVITY, fallbackType = Sensor.TYPE_ACCELEROMETER) { e ->
-        val (x, y, z) = Triple(e.values[0], e.values[1], e.values[2])
+        // Read per reading: a large screen can turn 180° without the screen being recreated.
+        val (x, y) = toDisplayAxes(e.values[0], e.values[1], view.display?.rotation ?: Surface.ROTATION_0)
+        val z = e.values[2]
         val r = Math.toDegrees(atan2(x.toDouble(), sqrt((y * y + z * z).toDouble()))).toFloat()
         val p = Math.toDegrees(atan2(y.toDouble(), sqrt((x * x + z * z).toDouble()))).toFloat()
         roll += (r - roll) * 0.2f

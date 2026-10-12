@@ -73,6 +73,13 @@ class AirHockey(val height: Float = 1.7f, seed: Long = 0L) {
         serveDelay = 0f
     }
 
+    /** Carries on a match at [blue]–[red], with everything back in its starting place and the puck on blue's side. */
+    fun resume(blue: Int, red: Int) {
+        reset()
+        scores[0] = blue
+        scores[1] = red
+    }
+
     /** Advances by [dt] seconds in fixed sub-steps, so fast pucks don't pass through mallets. */
     fun step(dt: Float): List<Event> {
         val events = ArrayList<Event>(2)

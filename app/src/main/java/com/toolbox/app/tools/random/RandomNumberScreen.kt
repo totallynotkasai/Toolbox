@@ -19,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -44,7 +45,7 @@ fun RandomNumberScreen(onBack: () -> Unit) {
     var minText by rememberSaveable { mutableStateOf("1") }
     var maxText by rememberSaveable { mutableStateOf("100") }
     var value by rememberSaveable { mutableStateOf<Long?>(null) }
-    var busy by rememberSaveable { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) } // not saved: the shuffle that clears it doesn't survive a recreation
 
     val min = minText.toLongOrNull()
     val max = maxText.toLongOrNull()

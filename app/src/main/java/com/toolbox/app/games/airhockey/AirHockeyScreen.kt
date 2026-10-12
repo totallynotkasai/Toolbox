@@ -27,9 +27,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -74,6 +76,10 @@ fun AirHockeyScreen(onBack: () -> Unit) {
     val mode = Mode.entries.firstOrNull { it.name == modeName } ?: Mode.TwoPlayer
     val (tally, setTally) = rememberTally("airhockey_tally_${mode.name}")
     var menu by remember { mutableStateOf(false) }
+    // The match score is saved, so a recreated screen or a resized table carries on the same match, paused.
+    var blue by rememberSaveable { mutableIntStateOf(0) }
+    var red by rememberSaveable { mutableIntStateOf(0) }
+    var finished by rememberSaveable { mutableStateOf(false) }
 
     ToolScaffold(
         title = "Air Hockey",
@@ -90,17 +96,22 @@ fun AirHockeyScreen(onBack: () -> Unit) {
         BoxWithConstraints(Modifier.fillMaxSize().padding(padding).padding(12.dp), contentAlignment = Alignment.Center) {
             // The table's shape follows the screen, within sensible limits, and the physics is built to match.
             val aspect = (maxHeight / maxWidth).coerceIn(1.35f, 2f)
-            val game = remember(aspect) { AirHockey(height = aspect, seed = System.nanoTime()).apply { reset() } }
+            val game = remember(aspect) { AirHockey(height = aspect, seed = System.nanoTime()).apply { resume(blue, red) } }
             var frame by remember { mutableLongStateOf(0L) }
             var playing by remember(game) { mutableStateOf(false) }
-            var finished by remember(game) { mutableStateOf(false) }
             val cpu = mode.cpuSpeed != null
             game.malletSpeed[1] = mode.cpuSpeed ?: AirHockey.MALLET_MAX_SPEED
             game.aiReaction = mode.cpuReaction
 
-            fun start() {
+            fun newMatch() {
                 game.reset()
+                blue = 0; red = 0
                 finished = false
+            }
+
+            // Starts a match, or carries on one brought back part-way through.
+            fun start() {
+                if (finished) newMatch()
                 playing = true
                 haptics.click()
             }
@@ -122,6 +133,7 @@ fun AirHockeyScreen(onBack: () -> Unit) {
                             is AirHockey.Event.Goal -> {
                                 synth.play(if (e.scorer == 0 || !cpu) 784f else 392f, 220, 0.45f)
                                 haptics.heavy()
+                                blue = game.scores[0]; red = game.scores[1]
                             }
                         }
                         game.winner?.let { w ->
@@ -153,7 +165,11 @@ fun AirHockeyScreen(onBack: () -> Unit) {
                         Spacer(Modifier.height(16.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             for (m in Mode.entries) {
-                                FilterChip(selected = m == mode, onClick = { modeName = m.name }, label = { Text(m.label, maxLines = 1) })
+                                FilterChip(
+                                    selected = m == mode,
+                                    onClick = { if (m != mode) { modeName = m.name; newMatch() } },
+                                    label = { Text(m.label, maxLines = 1) },
+                                )
                             }
                         }
                         Spacer(Modifier.height(8.dp))
@@ -162,7 +178,15 @@ fun AirHockeyScreen(onBack: () -> Unit) {
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Spacer(Modifier.height(12.dp))
-                        Button(onClick = ::start) { Text(if (finished) "Play again" else "Start") }
+                        Button(onClick = ::start) {
+                            Text(
+                                when {
+                                    finished -> "Play again"
+                                    blue + red > 0 -> "Resume"
+                                    else -> "Start"
+                                },
+                            )
+                        }
                     }
                 }
             }

@@ -5,6 +5,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.view.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -47,4 +48,16 @@ fun rememberSensorListener(
         }
     }
     return sensor != null
+}
+
+/**
+ * Turns an accelerometer or gravity reading's [x] and [y] (device axes: x to the right of the portrait screen, y up
+ * it) into the same axes on the screen as shown, for a display turned by [rotation], a `Surface.ROTATION_*` value.
+ * Only matters where the portrait lock is ignored, as on screens 600dp and wider; a portrait screen passes through.
+ */
+fun toDisplayAxes(x: Float, y: Float, rotation: Int): Pair<Float, Float> = when (rotation) {
+    Surface.ROTATION_90 -> -y to x
+    Surface.ROTATION_180 -> -x to -y
+    Surface.ROTATION_270 -> y to -x
+    else -> x to y
 }
