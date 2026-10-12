@@ -4,8 +4,9 @@ import kotlin.math.roundToInt
 
 /**
  * Running heads/tails statistics for the Coin, shared by its Quick and Throw modes.
- * [history] holds the last [HISTORY_MAX] results, oldest first, as 'H'/'T'; [streak] is the length of the current run,
- * which can be longer than the history.
+ * [history] holds the last [HISTORY_MAX] results, oldest first, as 'H'/'T'. The strip under the counts shows the last
+ * [STRIP] of them, and the full list shows them all. [streak] is the length of the current run, which can be longer
+ * than the history.
  */
 data class CoinStats(val heads: Int = 0, val tails: Int = 0, val streak: Int = 0, val history: String = "") {
     val total get() = heads + tails
@@ -39,6 +40,20 @@ data class CoinStats(val heads: Int = 0, val tails: Int = 0, val streak: Int = 0
         return h to 100 - h
     }
 
+    /** The list emptied and the run ended, keeping the counts: Clear in the full list. */
+    fun clearHistory(): CoinStats = CoinStats(heads, tails)
+
+    /**
+     * Undoing [clearHistory]: [cleared]'s results go back before any recorded since, cut to [HISTORY_MAX]. A run that
+     * carried on the same face since the clear joins up with the run from before it.
+     */
+    fun undoClear(cleared: CoinStats): CoinStats {
+        if (history.isEmpty()) return CoinStats(heads, tails, cleared.streak, cleared.history)
+        // The run since the clear started from nothing, so it covers every result since only if it's at least as long.
+        val unbroken = streak >= history.length && cleared.history.lastOrNull() == history.last()
+        return CoinStats(heads, tails, if (unbroken) cleared.streak + streak else streak, (cleared.history + history).takeLast(HISTORY_MAX))
+    }
+
     /**
      * These counts and [other]'s together, for merging the two old coin tools. Neither recorded when its results
      * came, so the run and the history are taken from whichever was used more.
@@ -51,7 +66,8 @@ data class CoinStats(val heads: Int = 0, val tails: Int = 0, val streak: Int = 0
     fun encode() = "$heads,$tails,$streak,$history"
 
     companion object {
-        const val HISTORY_MAX = 10
+        const val HISTORY_MAX = 20
+        const val STRIP = 10
 
         /** Reads [encode]'s format; anything unreadable gives empty stats rather than a crash. */
         fun decode(s: String): CoinStats {

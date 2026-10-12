@@ -21,12 +21,17 @@ class CoinStatsTest {
         assertNull(s.record(false).streakText())
     }
 
-    @Test fun historyKeepsTheLastTenButStreakKeepsCounting() {
+    @Test fun historyKeepsTheLastTwentyButStreakKeepsCounting() {
         var s = CoinStats()
-        repeat(14) { s = s.record(false) }
+        repeat(24) { s = s.record(false) }
+        assertEquals(20, CoinStats.HISTORY_MAX)
         assertEquals(CoinStats.HISTORY_MAX, s.history.length)
-        assertEquals(14, s.streak)
-        assertEquals("14 tails in a row", s.streakText())
+        assertEquals(24, s.streak)
+        assertEquals("24 tails in a row", s.streakText())
+    }
+
+    @Test fun anOlderSavedHistoryOfTenStillReads() {
+        assertEquals(CoinStats(5, 5, 1, "HTHTHTHTHT"), CoinStats.decode("5,5,1,HTHTHTHTHT"))
     }
 
     @Test fun encodeRoundTripsAndBadInputIsEmpty() {
