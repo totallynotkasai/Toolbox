@@ -2,6 +2,7 @@ package com.toolbox.app
 
 import com.toolbox.app.tools.units.UnitCategory
 import com.toolbox.app.tools.units.convert
+import com.toolbox.app.tools.units.decimalMark
 import com.toolbox.app.tools.units.formatNumber
 import com.toolbox.app.tools.units.parseNumber
 import org.junit.Assert.assertEquals
@@ -95,5 +96,45 @@ class UnitsTest {
         assertEquals("123456789012345", formatNumber(123456789012345.0, 15))
         assertEquals("—", formatNumber(Double.POSITIVE_INFINITY))
         assertEquals("—", formatNumber(Double.NaN))
+    }
+}
+
+class DecimalMarkTest {
+    @Test fun ukReadsALoneCommaAsAPointUnlessItGroupsThousands() {
+        assertEquals(1.5, parseNumber("1,5")!!, 0.0)
+        assertEquals(12.25, parseNumber("12,25")!!, 0.0)
+        assertEquals(1000.0, parseNumber("1,000")!!, 0.0)
+        assertEquals(1234567.0, parseNumber("1,234,567")!!, 0.0)
+        assertEquals(1000.5, parseNumber("1,000.5")!!, 0.0)
+        assertEquals(0.5, parseNumber(",5")!!, 0.0)
+    }
+
+    @Test fun commaLocalesReadTheCommaAsThePoint() {
+        assertEquals(1.5, parseNumber("1,5", ',')!!, 0.0)
+        assertEquals(-3.25, parseNumber("-3,25", ',')!!, 0.0)
+        assertEquals(1000.5, parseNumber("1.000,5", ',')!!, 0.0)
+        assertEquals(1000.5, parseNumber("1 000,5", ',')!!, 0.0)
+        assertEquals(1000.5, parseNumber("1 000,5", ',')!!, 0.0)
+        assertEquals(1000.0, parseNumber("1.000", ',')!!, 0.0)
+        assertEquals(1.5, parseNumber("1.5", ',')!!, 0.0) // a keyboard with only "." still works
+        assertEquals(1500.0, parseNumber("1,5e3", ',')!!, 0.0)
+        assertNull(parseNumber("1,2,3", ','))
+        assertNull(parseNumber(",", ','))
+        assertNull(parseNumber("-,", ','))
+    }
+
+    @Test fun formattingUsesTheMarkAndReadsBack() {
+        assertEquals("0,3937007874", formatNumber(1 / 2.54, decimal = ','))
+        assertEquals("1,5e-9", formatNumber(1.5e-9, decimal = ','))
+        for (v in listOf(0.3937007874, 1234.5, -40.25, 1.5e-9)) {
+            assertEquals(v, parseNumber(formatNumber(v, decimal = ','), ',')!!, 0.0)
+            assertEquals(v, parseNumber(formatNumber(v))!!, 0.0)
+        }
+    }
+
+    @Test fun localeMarks() {
+        assertEquals('.', decimalMark(java.util.Locale.UK))
+        assertEquals(',', decimalMark(java.util.Locale.GERMANY))
+        assertEquals(',', decimalMark(java.util.Locale.FRANCE))
     }
 }

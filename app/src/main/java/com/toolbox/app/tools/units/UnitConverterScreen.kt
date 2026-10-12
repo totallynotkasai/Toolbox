@@ -54,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -68,6 +69,7 @@ private const val ALLOWED_INPUT = "0123456789.,-eE "
 @Composable
 fun UnitConverterScreen(onBack: () -> Unit) {
     val haptics = rememberHaptics()
+    val decimal = decimalMark(LocalLocale.current.platformLocale)
     var categoryName by rememberPref("units_category", UnitCategory.Length.name)
     val category = UnitCategory.entries.firstOrNull { it.name == categoryName } ?: UnitCategory.Length
 
@@ -81,9 +83,9 @@ fun UnitConverterScreen(onBack: () -> Unit) {
     // so changing a unit re-converts instead of leaving a stale number behind.
     var anchor by rememberSaveable { mutableIntStateOf(0) } // 0 = top ("from"), 1 = bottom ("to")
     var anchorText by rememberSaveable { mutableStateOf("1") }
-    val anchorValue = parseNumber(anchorText)
+    val anchorValue = parseNumber(anchorText, decimal)
     val derivedText = anchorValue?.let {
-        formatNumber(if (anchor == 0) convert(it, from, to) else convert(it, to, from))
+        formatNumber(if (anchor == 0) convert(it, from, to) else convert(it, to, from), decimal = decimal)
     } ?: ""
     val topText = if (anchor == 0) anchorText else derivedText
     val bottomText = if (anchor == 1) anchorText else derivedText
@@ -169,7 +171,7 @@ fun UnitConverterScreen(onBack: () -> Unit) {
                     )
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "1 ${from.symbol} = ${formatNumber(convert(1.0, from, to), 8)} ${to.symbol}",
+                        "1 ${from.symbol} = ${formatNumber(convert(1.0, from, to), 8, decimal)} ${to.symbol}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -199,6 +201,7 @@ fun UnitConverterScreen(onBack: () -> Unit) {
                         from = from,
                         selected = to,
                         units = category.units,
+                        decimal = decimal,
                         onPick = { haptics.tick(); toId = it.id; anchor = 0; anchorText = topText },
                         modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
                     )
@@ -292,12 +295,13 @@ private fun AllUnits(
     from: UnitDef,
     selected: UnitDef,
     units: List<UnitDef>,
+    decimal: Char,
     onPick: (UnitDef) -> Unit,
     modifier: Modifier,
 ) {
     Column(modifier) {
         Text(
-            "${formatNumber(value)} ${from.symbol} is",
+            "${formatNumber(value, decimal = decimal)} ${from.symbol} is",
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
@@ -324,7 +328,7 @@ private fun AllUnits(
                         )
                         Box(Modifier.padding(start = 12.dp)) {
                             Text(
-                                "${formatNumber(convert(value, from, u))} ${u.symbol}",
+                                "${formatNumber(convert(value, from, u), decimal = decimal)} ${u.symbol}",
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                 color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
