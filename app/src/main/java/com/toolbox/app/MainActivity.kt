@@ -1,5 +1,6 @@
 package com.toolbox.app
 
+import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
@@ -16,7 +17,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.navigation.compose.NavHost
@@ -24,8 +24,13 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.toolbox.app.home.HomeScreen
+import com.toolbox.app.tools.timer.TimerController
+import com.toolbox.app.tools.timer.TimerPhase
 import com.toolbox.app.ui.common.LocalToolRoute
 import com.toolbox.app.ui.theme.ToolboxTheme
+
+/** Screens a notification may open through [MainActivity.EXTRA_OPEN], in release builds too. */
+private val OPENABLE_ROUTES = setOf(Tool.Timer.route)
 
 /** Debug start route that opens the home screen's Settings sheet instead of a tool. */
 private const val SETTINGS_ROUTE = "settings"
@@ -36,6 +41,9 @@ private val FREE_ROTATION_ROUTES = setOf(Tool.Calculator.route)
 private const val FREE_ROTATION_KEY = "free_rotation"
 
 class MainActivity : ComponentActivity() {
+    /** A screen an intent asked for, opened over whatever is showing and then cleared. */
+    private var openRequest by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         enableEdgeToEdge()
@@ -43,12 +51,38 @@ class MainActivity : ComponentActivity() {
         // A Calculator recreated in landscape asks for free rotation again before its first frame, so the manifest's
         // portrait lock doesn't turn it back upright while the navigation state is still being restored.
         if (savedInstanceState?.getBoolean(FREE_ROTATION_KEY) == true) applyOrientation(free = true)
+        val debugRoute = debugStartRoute()
+        // A recreated activity keeps its old intent, which has already been handled.
+        if (savedInstanceState == null) {
+            openRequest = requestedRoute(intent) ?: debugRoute?.takeIf { it != SETTINGS_ROUTE }
+            debugStartTimer()
+        }
         setContent {
             ToolboxTheme {
-                ToolboxNavHost(debugStartRoute(), onRouteShown = { applyOrientation(free = it in FREE_ROTATION_ROUTES) })
+                ToolboxNavHost(
+                    openRequest = openRequest,
+                    onOpened = { openRequest = null },
+                    startWithSettings = debugRoute == SETTINGS_ROUTE,
+                    onRouteShown = { applyOrientation(free = it in FREE_ROTATION_ROUTES) },
+                )
             }
         }
     }
+
+    /** Coming back to the app while the timer is ringing goes straight to its Stop button. */
+    override fun onStart() {
+        super.onStart()
+        if (TimerController(this).state.phase == TimerPhase.Ringing) openRequest = Tool.Timer.route
+    }
+
+    /** A notification tapped while the app is already open, such as the Timer's. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        requestedRoute(intent)?.let { openRequest = it }
+    }
+
+    private fun requestedRoute(intent: Intent?) = intent?.getStringExtra(EXTRA_OPEN)?.takeIf { it in OPENABLE_ROUTES }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
@@ -68,15 +102,32 @@ class MainActivity : ComponentActivity() {
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return null
         return intent?.getStringExtra("route")?.takeIf { it == SETTINGS_ROUTE || Tool.byRoute(it) != null }
     }
+
+    /** Debug builds only: `--el timer 60000` starts a one-minute timer, to check the alarm without touching the phone. */
+    private fun debugStartTimer() {
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
+        val ms = intent?.getLongExtra("timer", 0L) ?: 0L
+        if (ms > 0) TimerController(this).run { set(ms); start() }
+    }
+
+    companion object {
+        /** Intent extra naming a screen to open, one of [OPENABLE_ROUTES]. */
+        const val EXTRA_OPEN = "open"
+    }
 }
 
 @Composable
-private fun ToolboxNavHost(startRoute: String? = null, onRouteShown: (String) -> Unit = {}) {
+private fun ToolboxNavHost(
+    openRequest: String?,
+    onOpened: () -> Unit,
+    startWithSettings: Boolean,
+    onRouteShown: (String) -> Unit,
+) {
     val nav = rememberNavController()
-    var startHandled by rememberSaveable { mutableStateOf(false) } // so recreation doesn't reopen it
-    LaunchedEffect(startRoute) {
-        if (startRoute != null && startRoute != SETTINGS_ROUTE && !startHandled) nav.navigate(startRoute) { launchSingleTop = true }
-        startHandled = true
+    LaunchedEffect(openRequest) {
+        if (openRequest == null) return@LaunchedEffect
+        nav.navigate(openRequest) { launchSingleTop = true }
+        onOpened()
     }
     // The current entry changes as soon as back is pressed, so leaving the Calculator turns upright straight away.
     val route = nav.currentBackStackEntryAsState().value?.destination?.route
@@ -94,7 +145,7 @@ private fun ToolboxNavHost(startRoute: String? = null, onRouteShown: (String) ->
         composable("home") {
             HomeScreen(
                 onOpen = { tool -> nav.navigate(tool.route) { launchSingleTop = true } },
-                startWithSettings = startRoute == SETTINGS_ROUTE,
+                startWithSettings = startWithSettings,
             )
         }
         Tool.entries.forEach { tool ->

@@ -65,8 +65,8 @@ import com.toolbox.app.tools.soundmeter.SoundMeterScreen
 import com.toolbox.app.tools.spinner.SpinnerScreen
 import com.toolbox.app.tools.steps.StepCounterScreen
 import com.toolbox.app.tools.stopwatch.StopwatchScreen
-import com.toolbox.app.tools.stopwatch.TimerScreen
 import com.toolbox.app.tools.teams.TeamSplitterScreen
+import com.toolbox.app.tools.timer.TimerScreen
 import com.toolbox.app.tools.tuner.TunerScreen
 import com.toolbox.app.tools.units.UnitConverterScreen
 import com.toolbox.app.toys.bubblewrap.BubbleWrapScreen
