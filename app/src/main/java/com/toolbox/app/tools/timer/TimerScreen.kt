@@ -1,18 +1,13 @@
 package com.toolbox.app.tools.timer
 
 import android.Manifest
-import android.app.Activity
-import android.content.ActivityNotFoundException
+import android.annotation.SuppressLint
 import android.content.Context
-import android.content.ContextWrapper
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.provider.Settings
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -59,7 +54,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.openAppSettings
+import com.toolbox.app.ui.common.rememberPermission
 import com.toolbox.app.ui.common.rememberPref
+import com.toolbox.app.ui.common.startFirst
 import java.util.Date
 
 @Composable
@@ -77,15 +75,17 @@ private fun TimerPane() {
     var canNotify by remember { mutableStateOf(timer.canNotify) }
     var asked by rememberPref("timer_notifications_asked", false)
 
-    val askPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+    // Only asked for on Android 13+; below that Android reads it as an unknown permission, never granted.
+    @SuppressLint("InlinedApi")
+    val permission = rememberPermission(Manifest.permission.POST_NOTIFICATIONS) {
         canNotify = timer.canNotify
         timer.refresh() // Post the countdown now that it's allowed.
     }
     fun allowNotifications() {
-        val canAsk = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasPermission(context) &&
-            (!asked || context.findActivity()?.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) == true)
+        // Below Android 13, or once allowed but switched off in Android's settings, only the settings can turn them on.
+        val canAsk = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasPermission(context) && !permission.blocked
         asked = true
-        if (canAsk) askPermission.launch(Manifest.permission.POST_NOTIFICATIONS) else context.openNotificationSettings()
+        if (canAsk) permission.request() else context.openNotificationSettings()
     }
     fun start() {
         timer.start()
@@ -240,19 +240,5 @@ private fun hasPermission(context: Context) = Build.VERSION.SDK_INT < Build.VERS
 
 private fun Context.openNotificationSettings() {
     val channel = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-    val details = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))
-    for (intent in listOf(channel, details)) {
-        try {
-            startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            return
-        } catch (_: ActivityNotFoundException) {
-            // Try the next one.
-        }
-    }
-}
-
-private tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
+    if (!startFirst(channel)) openAppSettings()
 }
