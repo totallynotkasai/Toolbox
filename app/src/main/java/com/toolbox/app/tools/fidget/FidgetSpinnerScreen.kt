@@ -22,7 +22,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -48,6 +47,7 @@ import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.VibesToggleButton
 import com.toolbox.app.ui.common.rememberBestScore
+import com.toolbox.app.ui.common.rememberPcmStream
 import com.toolbox.app.ui.common.rememberVibes
 import com.toolbox.app.ui.theme.GoogleColors
 import kotlin.math.abs
@@ -85,8 +85,7 @@ fun FidgetSpinnerScreen(onBack: () -> Unit) {
     var clockMs by remember { mutableFloatStateOf(0f) }
     val (bestRpm, submitRpm) = rememberBestScore("fidget-rpm")
 
-    val audio = remember { FidgetAudio(MAX_SPEED) }
-    DisposableEffect(Unit) { audio.start(); onDispose { audio.stop() } }
+    val audio = rememberPcmStream { FidgetAudio(MAX_SPEED) }
     val vibes = rememberVibes()
 
     // Physics loop: integrate spin and friction every frame; feed speed to the synth.

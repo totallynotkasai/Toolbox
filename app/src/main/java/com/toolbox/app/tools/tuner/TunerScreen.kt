@@ -29,7 +29,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -45,14 +44,12 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.toolbox.app.ui.common.MicEffect
 import com.toolbox.app.ui.common.MicPermissionGate
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
-import com.toolbox.app.ui.common.openMicRecord
-import com.toolbox.app.ui.common.readFully
 import com.toolbox.app.ui.theme.GoogleColors
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.log10
@@ -80,55 +77,23 @@ private fun TunerContent() {
     var inputLevel by remember { mutableFloatStateOf(0f) }
     var micFailed by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.Default) {
-            // VOICE_RECOGNITION gives a flat, un-gated signal on most phones. The default MIC path applies
-            // noise suppression, which treats a sustained guitar note as "noise" and fades it out.
-            // (UNPROCESSED sounded ideal but is unsupported or very quiet on many devices.)
-            val record = openMicRecord(SAMPLE_RATE, WINDOW * 2, MediaRecorder.AudioSource.VOICE_RECOGNITION, MediaRecorder.AudioSource.MIC)
-            if (record == null) {
-                withContext(Dispatchers.Main) { micFailed = true }
-                return@withContext
-            }
-            val detector = PitchDetector(SAMPLE_RATE, WINDOW)
-            val window = FloatArray(WINDOW)
-            val hop = ShortArray(HOP)
-            val recent = ArrayDeque<Float>()
-            var noiseFloor = 0.0005f
-            var misses = 0
-            try {
-                record.startRecording()
-                while (isActive) {
-                    if (!record.readFully(hop)) {
-                        if (isActive) withContext(Dispatchers.Main) { micFailed = true }
-                        break
-                    }
-                    // Slide the analysis window left by one hop, append the new samples.
-                    System.arraycopy(window, HOP, window, 0, WINDOW - HOP)
-                    for (i in 0 until HOP) window[WINDOW - HOP + i] = hop[i] / 32768f
-
-                    // Adaptive gate: track the room's noise floor (falls fast, rises slowly) and only
-                    // analyse frames clearly above it, so a quiet room lets a quiet string through.
-                    val rms = detector.rms(window)
-                    noiseFloor = if (rms < noiseFloor) rms else noiseFloor + (rms - noiseFloor) * 0.01f
-                    val f = detector.detect(window, minRms = maxOf(0.0006f, noiseFloor * 2f))
-
-                    // Median of the last 3 readings drops one-frame octave slips as a string's attack fades.
-                    val out = f?.let {
-                        recent.addLast(it)
-                        if (recent.size > 3) recent.removeFirst()
-                        recent.sorted()[recent.size / 2]
-                    }
-                    withContext(Dispatchers.Main) {
-                        inputLevel = (20 * log10(rms.coerceAtLeast(1e-5f)) + 70f).coerceIn(0f, 60f) / 60f
-                        if (out != null) { frequency = out; misses = 0 }
-                        else if (++misses > 25) { frequency = null; recent.clear() } // hold ~1 s while a note rings out
-                    }
-                }
-            } finally {
-                record.stop()
-                record.release()
-            }
+    // Analysis state, only touched on the mic thread.
+    val analysis = remember { TunerAnalysis() }
+    // VOICE_RECOGNITION gives a flat, un-gated signal on most phones. The default MIC path applies
+    // noise suppression, which treats a sustained guitar note as "noise" and fades it out.
+    // (UNPROCESSED sounded ideal but is unsupported or very quiet on many devices.)
+    MicEffect(
+        SAMPLE_RATE,
+        blockSize = HOP,
+        sources = MIC_SOURCES,
+        minBufferBytes = WINDOW * 2,
+        onError = { micFailed = true },
+    ) { hop ->
+        val reading = analysis.add(hop)
+        withContext(Dispatchers.Main) {
+            inputLevel = reading.level
+            if (reading.frequency != null) frequency = reading.frequency
+            else if (reading.lost) frequency = null
         }
     }
 
@@ -223,5 +188,46 @@ private fun TunerContent() {
                 }
             }
         }
+    }
+}
+
+private val MIC_SOURCES = intArrayOf(MediaRecorder.AudioSource.VOICE_RECOGNITION, MediaRecorder.AudioSource.MIC)
+
+/** The tuner's per-hop analysis: a sliding window, an adaptive noise gate and a short median filter. */
+private class TunerAnalysis {
+    class Reading(val level: Float, val frequency: Float?, val lost: Boolean)
+
+    private val detector = PitchDetector(SAMPLE_RATE, WINDOW)
+    private val window = FloatArray(WINDOW)
+    private val recent = ArrayDeque<Float>()
+    private var noiseFloor = 0.0005f
+    private var misses = 0
+
+    fun add(hop: ShortArray): Reading {
+        // Slide the analysis window left by one hop, append the new samples.
+        System.arraycopy(window, HOP, window, 0, WINDOW - HOP)
+        for (i in 0 until HOP) window[WINDOW - HOP + i] = hop[i] / 32768f
+
+        // Adaptive gate: track the room's noise floor (falls fast, rises slowly) and only
+        // analyse frames clearly above it, so a quiet room lets a quiet string through.
+        val rms = detector.rms(window)
+        noiseFloor = if (rms < noiseFloor) rms else noiseFloor + (rms - noiseFloor) * 0.01f
+        val f = detector.detect(window, minRms = maxOf(0.0006f, noiseFloor * 2f))
+
+        // Median of the last 3 readings drops one-frame octave slips as a string's attack fades.
+        val out = f?.let {
+            recent.addLast(it)
+            if (recent.size > 3) recent.removeFirst()
+            recent.sorted()[recent.size / 2]
+        }
+        val level = (20 * log10(rms.coerceAtLeast(1e-5f)) + 70f).coerceIn(0f, 60f) / 60f
+        if (out != null) {
+            misses = 0
+            return Reading(level, out, lost = false)
+        }
+        // Hold ~1 s while a note rings out.
+        val lost = ++misses > 25
+        if (lost) recent.clear()
+        return Reading(level, null, lost)
     }
 }

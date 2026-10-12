@@ -37,7 +37,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -72,6 +71,7 @@ import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.common.rememberShakeEnabled
+import com.toolbox.app.ui.common.rememberToneSynth
 import com.toolbox.app.ui.theme.GoogleColors
 import kotlinx.coroutines.launch
 import kotlin.math.atan2
@@ -106,8 +106,7 @@ fun SpinnerScreen(onBack: () -> Unit) {
     var editing by remember { mutableStateOf(false) }
     val measurer = rememberTextMeasurer()
 
-    val audio = remember { SpinAudio() }
-    DisposableEffect(Unit) { audio.start(); onDispose { audio.stop() } }
+    val synth = rememberToneSynth()
 
     fun update(newOptions: List<String>) { options = newOptions; store.save(newOptions); result = null }
 
@@ -123,7 +122,7 @@ fun SpinnerScreen(onBack: () -> Unit) {
         var last = floor(angle.value / sweep)
         snapshotFlow { angle.value }.collect {
             val now = floor(it / sweep)
-            if (now != last) { last = now; audio.tick(); haptics.tick() }
+            if (now != last) { last = now; synth.tick(); haptics.tick() }
         }
     }
 
