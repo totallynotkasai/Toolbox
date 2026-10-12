@@ -88,9 +88,9 @@ import kotlin.math.sqrt
 private const val ON_COURSE_DEG = 3f
 
 /**
- * Magnetic compass. Uses the fused rotation-vector sensor where there is one (steadier, and unaffected by the phone
- * shaking), otherwise accelerometer + magnetometer. The magnetometer is always read too, for its calibration
- * accuracy and to spot magnetic interference.
+ * Magnetic compass, or true with [rememberTrueNorth]'s declination added. Uses the fused rotation-vector sensor where
+ * there is one (steadier, and unaffected by the phone shaking), otherwise accelerometer + magnetometer. The
+ * magnetometer is always read too, for its calibration accuracy and to spot magnetic interference.
  */
 @Composable
 fun CompassScreen(onBack: () -> Unit) {
@@ -106,11 +106,17 @@ fun CompassScreen(onBack: () -> Unit) {
     var haveGravity by remember { mutableStateOf(false) }
     var haveGeomag by remember { mutableStateOf(false) }
 
-    var heading by remember { mutableStateOf<Float?>(null) }
+    var magnetic by remember { mutableStateOf<Float?>(null) }
     var accuracy by remember { mutableIntStateOf(SensorManager.SENSOR_STATUS_ACCURACY_HIGH) }
     var fieldStrength by remember { mutableFloatStateOf(45f) }
     var errorDeg by remember { mutableStateOf<Float?>(null) } // Rotation vector's own estimate, where reported.
+    // Kept as a magnetic bearing, so it points the same way whichever north is shown.
     var bearing by rememberSaveable { mutableStateOf<Float?>(null) }
+
+    val trueNorth = rememberTrueNorth()
+    // Degrees added to magnetic headings: the declination while True north is on and one is known, otherwise none.
+    val offset = trueNorth.declination ?: 0f
+    val heading = magnetic?.let { applyDeclination(it, offset) }
 
     fun publish() {
         val (x, y) = when (view.display?.rotation ?: Surface.ROTATION_0) {
@@ -122,8 +128,8 @@ fun CompassScreen(onBack: () -> Unit) {
         SensorManager.remapCoordinateSystem(matrix, x, y, remapped)
         val raw = headingFromMatrix(remapped) ?: return
         val smooth = filter.update(raw)
-        heading = smooth
-        if (ticker.update(smooth) != null) haptics.tick()
+        magnetic = smooth
+        if (ticker.update(applyDeclination(smooth, offset)) != null) haptics.tick()
     }
 
     val hasRotationVector = rememberSensorListener(Sensor.TYPE_ROTATION_VECTOR) { e ->
@@ -169,16 +175,27 @@ fun CompassScreen(onBack: () -> Unit) {
                     interference = isFieldDisturbed(fieldStrength),
                 )
                 Spacer(Modifier.height(8.dp))
-                Dial(heading ?: 0f, bearing, Modifier.size(dialSize).semantics {
-                    contentDescription = heading?.let { "Compass, heading ${spokenHeading(it)}" } ?: "Compass, waiting for a reading"
+                val shownBearing = bearing?.let { applyDeclination(it, offset) }
+                val kind = if (trueNorth.declination != null) "true" else "magnetic"
+                Dial(heading ?: 0f, shownBearing, Modifier.size(dialSize).semantics {
+                    contentDescription = heading?.let { "Compass, $kind heading ${spokenHeading(it)}" } ?: "Compass, waiting for a reading"
                 })
                 Spacer(Modifier.height(16.dp))
-                Reading(heading, errorDeg)
+                Reading(heading, trueNorth.declination != null, errorDeg)
                 Spacer(Modifier.height(12.dp))
-                BearingControls(heading, bearing, onMark = { haptics.click(); bearing = heading?.let { roundedDegrees(it).toFloat() } },
-                    onClear = { bearing = null })
+                BearingControls(
+                    heading, shownBearing,
+                    // Marks the whole degree shown, saved as the magnetic bearing it stands for.
+                    onMark = { haptics.click(); bearing = heading?.let { normalizeDegrees(roundedDegrees(it) - offset) } },
+                    onClear = { bearing = null },
+                )
+                Spacer(Modifier.height(16.dp))
+                TrueNorthControls(trueNorth, Modifier.widthIn(max = 420.dp).fillMaxWidth())
             }
         }
+    }
+    if (trueNorth.editing) {
+        DeclinationDialog(initial = trueNorth.manual, onDismiss = trueNorth::stopEditing, onSave = trueNorth::saveManual)
     }
 }
 
@@ -187,7 +204,7 @@ private fun lowPass(input: FloatArray, output: FloatArray, alpha: Float) {
 }
 
 @Composable
-private fun Reading(heading: Float?, errorDeg: Float?) {
+private fun Reading(heading: Float?, isTrue: Boolean, errorDeg: Float?) {
     val style = MaterialTheme.typography.displayMedium
     Text(
         heading?.let { "${roundedDegrees(it)}° ${compassPoint(it)}" } ?: "—",
@@ -198,7 +215,7 @@ private fun Reading(heading: Float?, errorDeg: Float?) {
         autoSize = TextAutoSize.StepBased(minFontSize = 20.sp, maxFontSize = style.fontSize),
     )
     val note = buildString {
-        append("Magnetic north")
+        append(if (isTrue) "True north" else "Magnetic north")
         if (errorDeg != null && errorDeg < 90f) append("  ·  ±${errorDeg.roundToInt()}°")
     }
     Text(note, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
