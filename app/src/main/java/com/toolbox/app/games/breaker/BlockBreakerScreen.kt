@@ -20,7 +20,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -29,7 +28,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,9 +46,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.toolbox.app.ui.common.GameGuardDialog
+import com.toolbox.app.ui.common.NewGameButton
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberBestScore
+import com.toolbox.app.ui.common.rememberGameGuard
+import com.toolbox.app.ui.common.rememberGameLoop
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.theme.GoogleColors
 import kotlin.math.abs
@@ -147,6 +149,12 @@ private class Breaker(val mode: Mode, private val onHit: (strong: Boolean) -> Un
         else -> rnd.nextFloat() > 0.22f                      // scattered
     }
 
+    /** Whether anything is moving: once the ball rests on the paddle and the last sparks fade, nothing needs drawing. */
+    val moving: Boolean get() = (!stuck && !over) || particles.isNotEmpty()
+
+    /** Something to lose: a ball in play or points scored, and the game not over. */
+    val underWay: Boolean get() = !over && (!stuck || score > 0)
+
     fun launch() {
         if (over) { restart(); return }
         if (!stuck) return
@@ -193,8 +201,8 @@ private class Breaker(val mode: Mode, private val onHit: (strong: Boolean) -> Un
         slowT = (slowT - dt).coerceAtLeast(0f); fireT = (fireT - dt).coerceAtLeast(0f)
 
         // Falling power-ups: caught by the paddle or lost off the bottom.
+        drops.forEach { it.y += DROP_SPEED * dt }
         val caught = drops.filter { d ->
-            d.y += DROP_SPEED * dt
             d.y >= PADDLE_Y - 0.01f && d.y <= PADDLE_Y + PADDLE_H + 0.02f && abs(d.x - paddleX) <= paddleW / 2 + 0.03f
         }
         caught.forEach { apply(it.power) }
@@ -333,29 +341,54 @@ fun BlockBreakerScreen(onBack: () -> Unit) {
     }
     var frame by remember { mutableLongStateOf(0L) }
     val (best, submit) = rememberBestScore(if (mode == Mode.Classic) "breaker" else "breaker-action")
+    val guard = rememberGameGuard()
     val measurer = rememberTextMeasurer()
+    // The power-up letters, measured once rather than on every frame.
+    val letters = remember(measurer) {
+        Power.entries.associateWith { measurer.measure(it.letter, TextStyle(color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)) }
+    }
 
-    LaunchedEffect(game) {
-        var last = 0L
-        while (true) {
-            withFrameNanos { now ->
-                val dt = if (last == 0L) 0f else ((now - last) / 1e9f).coerceAtMost(1f / 30)
-                last = now
-                val wasOver = game.over
-                game.update(dt)
-                if (game.over && !wasOver) submit(game.score)
-                frame = now
-            }
+    // Idles while the ball rests on the paddle or the game is over, once the last sparks have faded. It's held still
+    // while a "Start a new game?" question is open, so the ball can't be lost behind it.
+    val loop = rememberGameLoop(enabled = !guard.isAsking, maxDt = 1f / 30) { dt ->
+        val wasOver = game.over
+        game.update(dt)
+        if (game.over && !wasOver) submit(game.score)
+        frame++
+        game.moving
+    }
+
+    /** Ends a run that's under way: its score still counts towards the best, then [then] runs. */
+    fun endRun(title: String, confirm: String, then: () -> Unit) {
+        guard.run(game.underWay, title = title, text = if (game.score > 0) "This run will end. Its score of ${game.score} still counts towards your best." else "This run will end.", confirm = confirm) {
+            submit(game.score)
+            then()
+            loop.wake()
         }
     }
 
     val surface = MaterialTheme.colorScheme.surfaceContainer
     val paddleColor = MaterialTheme.colorScheme.onSurface
 
-    ToolScaffold(title = "Block Breaker", onBack = onBack) { padding ->
+    ToolScaffold(
+        title = "Block Breaker",
+        onBack = onBack,
+        actions = {
+            NewGameButton(
+                onClick = { endRun("Start a new game?", "New game") { game.restart() } },
+                enabled = game.underWay || game.over,
+            )
+        },
+    ) { padding ->
         ToolBody(padding) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Mode.entries.forEach { m -> FilterChip(selected = mode == m, onClick = { mode = m }, label = { Text(m.label) }) }
+                Mode.entries.forEach { m ->
+                    FilterChip(
+                        selected = mode == m,
+                        onClick = { if (m != mode) endRun("Switch to ${m.label}?", "Switch") { mode = m } },
+                        label = { Text(m.label) },
+                    )
+                }
             }
             Spacer(Modifier.height(8.dp))
             Row(Modifier.widthIn(max = 440.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -373,11 +406,13 @@ fun BlockBreakerScreen(onBack: () -> Unit) {
                     .aspectRatio(1f / H)
                     .clip(RoundedCornerShape(16.dp))
                     .background(surface)
-                    .pointerInput(game) { detectTapGestures { game.launch() } }
+                    // A tap launches; a drag only moves the paddle, so you can line up before launching.
+                    .pointerInput(game) { detectTapGestures { game.launch(); loop.wake() } }
                     .pointerInput(game) {
-                        detectDragGestures(onDragStart = { game.launch() }) { change, _ ->
+                        detectDragGestures { change, _ ->
                             change.consume()
                             game.paddleX = (change.position.x / size.width).coerceIn(game.paddleW / 2, 1 - game.paddleW / 2)
+                            loop.wake()
                         }
                     },
                 contentAlignment = Alignment.Center,
@@ -393,7 +428,7 @@ fun BlockBreakerScreen(onBack: () -> Unit) {
                         val w = 0.075f * s; val h = 0.034f * s
                         val tl = Offset(d.x * s - w / 2, d.y * s - h / 2)
                         drawRoundRect(d.power.color, tl, Size(w, h), CornerRadius(h / 2))
-                        val label = measurer.measure(d.power.letter, TextStyle(color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold))
+                        val label = letters.getValue(d.power)
                         drawText(label, topLeft = Offset(d.x * s - label.size.width / 2f, d.y * s - label.size.height / 2f))
                     }
                     val pw = game.paddleW
@@ -430,6 +465,7 @@ fun BlockBreakerScreen(onBack: () -> Unit) {
             }
         }
     }
+    GameGuardDialog(guard)
 }
 
 /** Timers for running power-ups. Reads the frame clock itself so only this row recomposes every frame. */

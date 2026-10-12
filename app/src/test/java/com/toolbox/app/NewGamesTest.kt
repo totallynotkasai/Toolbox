@@ -61,6 +61,28 @@ class StackGameTest {
         assertEquals(StackGame.State.Over, g.state)
         assertNull(g.drop())
     }
+
+    @Test fun onANarrowTowerAPerfectStillHasToOverlap() {
+        // Playing, no streak, moving right; the moving block, then the tower: the base and a sliver 0.008 wide.
+        val saved = floatArrayOf(StackGame.State.Playing.ordinal.toFloat(), 0f, 1f, 0.51f, 0.008f, 0.2f, 0.6f, 0.5f, 0.008f)
+        // 0.01 off is within the usual allowance, but it misses the sliver completely.
+        val miss = StackGame().apply { restore(saved) }
+        assertTrue(miss.drop() is StackGame.Drop.Miss)
+        // Within a quarter of the width it's still a perfect.
+        val perfect = StackGame().apply { restore(saved.copyOf().also { it[3] = 0.5015f }) }
+        assertTrue(perfect.drop() is StackGame.Drop.Perfect)
+    }
+
+    @Test fun resetGoesBackToTheBase() {
+        val g = StackGame()
+        g.start()
+        g.slideTo(g.top.x)
+        g.drop()
+        g.reset()
+        assertEquals(StackGame.State.Ready, g.state)
+        assertEquals(0, g.score)
+        assertNull(g.drop())
+    }
 }
 
 class DotsBoxesTest {

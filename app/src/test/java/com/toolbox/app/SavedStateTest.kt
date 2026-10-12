@@ -3,31 +3,33 @@ package com.toolbox.app
 import android.view.Surface
 import com.toolbox.app.games.airhockey.AirHockey
 import com.toolbox.app.games.snake.SnakeGame
-import com.toolbox.app.games.snake.State
 import com.toolbox.app.games.stack.StackGame
 import com.toolbox.app.ui.common.toDisplayAxes
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import kotlin.random.Random
 
 /** Games brought back after the screen is recreated carry on where they were. */
 class SavedStateTest {
     @Test fun snakeComesBackPausedWithTheSameBoard() {
-        val game = SnakeGame().apply { state = State.Playing; repeat(3) { step() } }
-        val back = SnakeGame().apply { restore(game.save()) }
-        assertEquals(State.Paused, back.state)
-        assertEquals(game.snake, back.snake)
+        var game = SnakeGame(state = SnakeGame.State.Playing)
+        repeat(3) { game = game.step(Random(it)).first }
+        val back = SnakeGame.restore(game.save())
+        assertEquals(SnakeGame.State.Paused, back.state)
+        assertEquals(game.body, back.body)
         assertEquals(game.food, back.food)
         assertEquals(game.score, back.score)
 
         // Resumed, it moves on in the same direction.
-        game.step(); back.state = State.Playing; back.step()
-        assertEquals(game.snake, back.snake)
+        val resumed = back.copy(state = SnakeGame.State.Playing)
+        assertEquals(game.step(Random(9)).first.body, resumed.step(Random(9)).first.body)
     }
 
     @Test fun finishedSnakeStaysFinished() {
-        val game = SnakeGame().apply { state = State.Over }
-        assertEquals(State.Over, SnakeGame().apply { restore(game.save()) }.state)
+        for (s in listOf(SnakeGame.State.Over, SnakeGame.State.Won)) {
+            assertEquals(s, SnakeGame.restore(SnakeGame(state = s).save()).state)
+        }
     }
 
     @Test fun stackCarriesOnWithTheSameTower() {

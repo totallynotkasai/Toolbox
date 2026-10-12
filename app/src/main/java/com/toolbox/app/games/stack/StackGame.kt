@@ -7,7 +7,8 @@ import kotlin.math.min
 /**
  * Stack Tower: a block slides back and forth above the tower and each tap drops it. Whatever hangs over the edge of
  * the block below is sliced off, so the tower narrows, until a block misses completely.
- * A drop within [PERFECT] of the block below counts as perfect and loses nothing; several in a row widen it again.
+ * A drop within [PERFECT] of the block below (or a quarter of its width, if that's less) counts as perfect and loses
+ * nothing; several in a row widen it again.
  *
  * Pure, so it can be unit-tested. Horizontal units are fractions of the play area's width (0 to 1).
  */
@@ -44,10 +45,16 @@ class StackGame {
     val speed get() = min(SPEED_MAX, SPEED_START + SPEED_GAIN * score)
 
     fun start() {
-        tower = listOf(Block((1 - BASE_WIDTH) / 2, BASE_WIDTH))
-        streak = 0
+        reset()
         state = State.Playing
         spawn()
+    }
+
+    /** Back to just the base, waiting for the first tap. */
+    fun reset() {
+        tower = listOf(Block((1 - BASE_WIDTH) / 2, BASE_WIDTH))
+        streak = 0
+        state = State.Ready
     }
 
     /** Slides the moving block for [dt] seconds, bouncing between the limits of its travel. */
@@ -64,7 +71,8 @@ class StackGame {
         if (state != State.Playing) return null
         val below = top
         val level = tower.size
-        if (abs(moving.x - below.x) <= PERFECT) {
+        // On a very narrow tower the allowance shrinks with it, so a "perfect" block always overlaps most of the one below.
+        if (abs(moving.x - below.x) <= min(PERFECT, below.width * 0.25f)) {
             streak++
             val grow = streak >= GROW_AFTER && below.width < BASE_WIDTH
             val width = if (grow) min(BASE_WIDTH, below.width + GROW_BY) else below.width

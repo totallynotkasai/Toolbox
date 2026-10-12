@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,86 +31,56 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.toolbox.app.ui.common.GameFooter
+import com.toolbox.app.ui.common.GameGuardDialog
+import com.toolbox.app.ui.common.GameOver
+import com.toolbox.app.ui.common.NewGameButton
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberBestScore
+import com.toolbox.app.ui.common.rememberGameGuard
 import com.toolbox.app.ui.common.rememberHaptics
 import kotlin.math.abs
-
-private const val N = 4
-
-private fun spawn(board: List<Int>): List<Int> {
-    val empty = board.indices.filter { board[it] == 0 }
-    if (empty.isEmpty()) return board
-    return board.toMutableList().also { it[empty.random()] = if (Math.random() < 0.9) 2 else 4 }
-}
-
-private fun newBoard() = spawn(spawn(List(N * N) { 0 }))
-
-/** Slides one row toward index 0, merging equal neighbours once. Returns the new row and points scored. */
-internal fun slide(row: List<Int>): Pair<List<Int>, Int> {
-    val tiles = row.filter { it != 0 }
-    val out = mutableListOf<Int>()
-    var gained = 0
-    var i = 0
-    while (i < tiles.size) {
-        if (i + 1 < tiles.size && tiles[i] == tiles[i + 1]) {
-            out += tiles[i] * 2; gained += tiles[i] * 2; i += 2
-        } else { out += tiles[i]; i++ }
-    }
-    while (out.size < N) out += 0
-    return out to gained
-}
-
-internal enum class Move { Left, Right, Up, Down }
-
-internal fun move(board: List<Int>, m: Move): Pair<List<Int>, Int> {
-    val out = MutableList(N * N) { 0 }
-    var gained = 0
-    for (line in 0 until N) {
-        // Index of the k-th cell along this line, ordered in the direction of travel.
-        val idx = (0 until N).map { k ->
-            when (m) {
-                Move.Left -> line * N + k
-                Move.Right -> line * N + (N - 1 - k)
-                Move.Up -> k * N + line
-                Move.Down -> (N - 1 - k) * N + line
-            }
-        }
-        val (slid, g) = slide(idx.map { board[it] })
-        gained += g
-        idx.forEachIndexed { k, cell -> out[cell] = slid[k] }
-    }
-    return out to gained
-}
-
-private fun canMove(b: List<Int>) = Move.entries.any { move(b, it).first != b }
 
 @Composable
 fun Game2048Screen(onBack: () -> Unit) {
     val haptics = rememberHaptics()
+    val guard = rememberGameGuard()
     var board by rememberSaveable { mutableStateOf(newBoard()) }
     var score by rememberSaveable { mutableIntStateOf(0) }
     val (best, submit) = rememberBestScore("2048")
+    // The best from before this game, so the end can say whether it was beaten. The saved best itself is updated
+    // after every move, so leaving mid-game never loses it.
+    var bestBefore by rememberSaveable { mutableIntStateOf(best) }
     val over = !canMove(board)
     val won = board.any { it >= 2048 }
 
-    // Called from a long-lived pointerInput, so read state fresh rather than via captured locals.
-    fun play(m: Move) {
-        if (!canMove(board)) return
-        val (next, gained) = move(board, m)
-        if (next == board) return
-        board = spawn(next)
-        score += gained
-        if (gained > 0) haptics.tick()
-        if (!canMove(board)) submit(score)
+    fun newGame() {
+        board = newBoard(); score = 0; bestBefore = best
     }
 
-    ToolScaffold(title = "2048", onBack = onBack) { padding ->
+    // Called from a long-lived pointerInput, so read state fresh rather than via captured locals.
+    fun swipe(m: Move) {
+        if (!canMove(board)) return
+        val (next, gained) = play(board, m) ?: return
+        board = next
+        score += gained
+        if (gained > 0) {
+            haptics.tick()
+            submit(score)
+        }
+        if (!canMove(next)) haptics.heavy()
+    }
+
+    ToolScaffold(
+        title = "2048",
+        onBack = onBack,
+        actions = { NewGameButton(onClick = { guard.run(!over && score > 0) { newGame() } }, enabled = score > 0 || over) },
+    ) { padding ->
         ToolBody(padding) {
             Row(Modifier.widthIn(max = 400.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Score $score", style = MaterialTheme.typography.titleLarge)
-                Text("Best ${maxOf(best, score)}", style = MaterialTheme.typography.titleLarge)
+                Text("Best $best", style = MaterialTheme.typography.titleLarge)
             }
             Spacer(Modifier.height(16.dp))
             Box(
@@ -131,7 +100,7 @@ fun Game2048Screen(onBack: () -> Unit) {
                                 acc += amount
                                 if (!fired && acc.getDistance() > 32.dp.toPx()) {
                                     fired = true
-                                    play(
+                                    swipe(
                                         if (abs(acc.x) > abs(acc.y)) { if (acc.x > 0) Move.Right else Move.Left }
                                         else { if (acc.y > 0) Move.Down else Move.Up },
                                     )
@@ -148,22 +117,22 @@ fun Game2048Screen(onBack: () -> Unit) {
                     }
                 }
                 if (over) {
-                    Box(
-                        Modifier.fillMaxSize().clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("Game over", style = MaterialTheme.typography.headlineMedium)
-                    }
+                    Box(Modifier.fillMaxSize().clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)))
                 }
             }
             Spacer(Modifier.height(16.dp))
-            Text(if (won) "You made 2048! Keep going." else " ", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.height(8.dp))
-            Button(onClick = { board = newBoard(); score = 0 }) { Text("New game") }
-            Spacer(Modifier.height(8.dp))
-            Text("Swipe to combine matching tiles", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            GameFooter(
+                over = if (!over) null else GameOver(
+                    if (won) "You made 2048!" else "No more moves",
+                    if (score > bestBefore) "Score $score · New best!" else "Score $score · Best $best",
+                ),
+                turn = if (won) "You made 2048! Keep going." else "Swipe to combine matching tiles",
+                turnColor = null,
+                onPlayAgain = ::newGame,
+            )
         }
     }
+    GameGuardDialog(guard)
 }
 
 private val TILE_COLORS = mapOf(
