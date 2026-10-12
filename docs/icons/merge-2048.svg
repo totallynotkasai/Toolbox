@@ -1,0 +1,6 @@
+<!-- Merge2048: generated from ToolIcons.kt by ToolIconsTest. Edit the Kotlin, not this file. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+  <g transform="translate(3.3 8.6) rotate(14 3.1 4.5)"><path d="M0.2,3A2.8,2.8 0 1,1 5.29,4.61L0.2,9H6.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>
+  <g transform="translate(14.1 8.6) rotate(-14 3.1 4.5)"><path d="M0.2,3A2.8,2.8 0 1,1 5.29,4.61L0.2,9H6.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>
+  <path d="M12,7.1V4.3M9.7,7.5L8.5,5.7M14.3,7.5L15.5,5.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
