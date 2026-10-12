@@ -127,10 +127,71 @@ object CalculatorEngine {
 
     /** The value to preview while typing: ignores a trailing operator or point, so "12+3×" shows 15. */
     fun preview(expr: String, answer: BigDecimal? = null): BigDecimal? {
+        val e = settled(expr)
+        return if (isSum(e)) evaluate(e, answer) else null // a lone number has nothing to work out yet
+    }
+
+    /** True when [expr] has something to work out: an operator, % or bracket, not just a number such as "−5" or "1e−9". */
+    fun isSum(expr: String): Boolean =
+        expr.trimStart(MINUS).replace("$EXP$MINUS", "$EXP").any { it in OPERATORS || it == '%' || it == '(' }
+
+    // Memory. The screen keeps the value and saves it with [BigDecimal.toString], which is exact.
+
+    /**
+     * What M+ and M− take: the answer after "=", or else what the sum works out to so far, ignoring a trailing
+     * operator as the preview does. A lone number counts too. Null on an error or an empty display, when they do nothing.
+     */
+    fun memoryOperand(expr: String, answer: BigDecimal?, showingResult: Boolean): BigDecimal? =
+        if (showingResult && answer != null) answer else settled(expr).takeIf { it.isNotEmpty() }?.let { evaluate(it, answer) }
+
+    fun memoryAdd(memory: BigDecimal, value: BigDecimal?): BigDecimal = value?.let { memory.add(it, MATH) } ?: memory
+
+    fun memorySubtract(memory: BigDecimal, value: BigDecimal?): BigDecimal = value?.let { memory.subtract(it, MATH) } ?: memory
+
+    fun memoryClear(): BigDecimal = BigDecimal.ZERO
+
+    /**
+     * Puts [value] into [expr] as a number: in place of the number being typed (and its minus sign), after an operator
+     * or "(", or with an implied × after ")" or "%". A negative value goes in a bracket after an operator, like ±.
+     */
+    fun memoryRecall(expr: String, value: BigDecimal): String {
+        var start = numberStart(expr)
+        val before = expr.getOrNull(start - 1)
+        if (before == MINUS && (start == 1 || expr[start - 2] in OPERATORS || expr[start - 2] == '(')) {
+            start -= if (start >= 3 && expr[start - 2] == '(' && expr[start - 3] in OPERATORS) 2 else 1
+        }
+        var base = expr.substring(0, start)
+        if (base.lastOrNull() == ')' || base.lastOrNull() == '%') base += TIMES
+        val shown = format(value)
+        val last = base.lastOrNull()
+        val text = if (value.signum() < 0 && last != null && last != '(') "($shown" else shown
+        return (base + text).takeIf { it.length <= MAX_LENGTH } ?: expr
+    }
+
+    /** [text] as TalkBack should say it, with the symbols as words: "2×−3" is "2 times minus 3". */
+    fun spoken(text: String): String = buildString {
+        for (c in text) {
+            append(
+                when (c) {
+                    PLUS -> " plus "
+                    MINUS -> " minus "
+                    TIMES -> " times "
+                    DIVIDE -> " divided by "
+                    '%' -> " percent "
+                    '(' -> " open bracket "
+                    ')' -> " close bracket "
+                    EXP -> " times 10 to the power "
+                    else -> c
+                },
+            )
+        }
+    }.replace(Regex(" +"), " ").trim()
+
+    /** [expr] without a trailing operator, point, "(" or "e", which the preview and memory ignore. */
+    private fun settled(expr: String): String {
         var e = expr
         while (e.isNotEmpty() && (e.last() in OPERATORS || e.last() == '.' || e.last() == '(' || e.last() == EXP)) e = e.dropLast(1)
-        if (e.trimStart(MINUS).none { it in OPERATORS || it == '%' || it == '(' }) return null // nothing to work out yet
-        return evaluate(e, answer)
+        return e
     }
 
     /**
