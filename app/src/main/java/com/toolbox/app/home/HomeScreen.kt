@@ -89,7 +89,7 @@ fun HomeScreen(onOpen: (Tool) -> Unit) {
             LargeTopAppBar(
                 title = { Text("Toolbox") },
                 scrollBehavior = scroll,
-                colors = TopAppBarDefaults.largeTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                     scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
                 ),

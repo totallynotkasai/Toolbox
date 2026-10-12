@@ -404,7 +404,7 @@ class DicePhysics(
                 c.a.w = c.a.w + (ra cross impulse) * shape.invInertia
             }
             if (bMoves) {
-                val b = c.b!!
+                val b = c.b
                 b.v = b.v - impulse * INV_MASS
                 b.w = b.w - (rb!! cross impulse) * shape.invInertia
             }

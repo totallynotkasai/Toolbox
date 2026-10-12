@@ -54,7 +54,7 @@ fun RandomNumberScreen(onBack: () -> Unit) {
     fun generate() {
         if (!valid || busy) return
         focus.clearFocus()
-        val lo = min!!; val hi = max!!
+        val lo = min; val hi = max
         busy = true
         scope.launch {
             // A quick shuffle through values before revealing the real one.

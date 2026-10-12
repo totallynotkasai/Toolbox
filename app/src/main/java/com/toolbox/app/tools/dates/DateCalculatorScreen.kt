@@ -51,6 +51,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -302,7 +303,7 @@ private fun AgeTab(today: LocalDate) {
             )
         }
         Spacer(Modifier.height(12.dp))
-        ResultRow("Born on a", birthDate.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.getDefault()))
+        ResultRow("Born on a", birthDate.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, LocalLocale.current.platformLocale))
         ResultRow("Days old", "%,d".format(age.totalDays))
         ResultRow(
             "Next birthday",

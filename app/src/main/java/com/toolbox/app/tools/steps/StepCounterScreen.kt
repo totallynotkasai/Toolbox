@@ -60,6 +60,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -110,7 +111,7 @@ fun StepCounterScreen(onBack: () -> Unit) {
     var goal by rememberPref(PREF_GOAL, 10_000)
     var stride by rememberPref(PREF_STRIDE, 70)
     var weight by rememberPref(PREF_WEIGHT, 70)
-    var miles by rememberPref(PREF_MILES, Locale.getDefault().country in MILES_COUNTRIES)
+    var miles by rememberPref(PREF_MILES, LocalLocale.current.platformLocale.country in MILES_COUNTRIES)
     val settings = StepSettings(goal, stride, weight, miles)
     var editing by rememberSaveable { mutableStateOf(false) }
 
@@ -327,7 +328,7 @@ private fun WeekCard(state: StepState, today: Long, goal: Int) {
     val bar = GoogleColors.Blue
     val grid = MaterialTheme.colorScheme.outline
     val ink = MaterialTheme.colorScheme.onSurface
-    val locale = Locale.getDefault()
+    val locale = LocalLocale.current.platformLocale
     val letters = remember(today, measurer, labelColor, ink) {
         days.mapIndexed { i, d ->
             measurer.measure(
