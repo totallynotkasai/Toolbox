@@ -25,7 +25,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,6 +50,7 @@ import com.toolbox.app.ui.common.NewGameButton
 import com.toolbox.app.ui.common.ScoresMenu
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberGameGuard
+import com.toolbox.app.ui.common.rememberGameLoop
 import com.toolbox.app.ui.common.rememberGameMode
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.common.rememberTally
@@ -127,34 +127,28 @@ fun AirHockeyScreen(onBack: () -> Unit) {
                 haptics.click()
             }
 
-            LaunchedEffect(playing, game) {
-                if (!playing) return@LaunchedEffect
-                var last = withFrameNanos { it }
-                while (playing) {
-                    withFrameNanos { now ->
-                        val dt = ((now - last) / 1e9f).coerceIn(0f, 0.05f)
-                        last = now
-                        if (cpu) game.aiTarget().let { game.setTarget(1, it.x, it.y) }
-                        for (e in game.step(dt)) when (e) {
-                            is AirHockey.Event.Hit -> {
-                                synth.knock(0.3f + 0.7f * e.intensity)
-                                if (!cpu || e.player == 0) haptics.tick()
-                            }
-                            is AirHockey.Event.Wall -> if (e.intensity > 0.08f) synth.knock(0.15f + 0.4f * e.intensity)
-                            is AirHockey.Event.Goal -> {
-                                synth.play(if (e.scorer == 0 || !cpu) 784f else 392f, 220, 0.45f)
-                                haptics.heavy()
-                                blue = game.scores[0]; red = game.scores[1]
-                            }
-                        }
-                        game.winner?.let { w ->
-                            playing = false
-                            finished = true
-                            currentTally.record(w + 1)
-                        }
-                        frame++
+            // Runs while a match is being played and the app is in view.
+            rememberGameLoop(enabled = playing) { dt ->
+                if (cpu) game.aiTarget().let { game.setTarget(1, it.x, it.y) }
+                for (e in game.step(dt)) when (e) {
+                    is AirHockey.Event.Hit -> {
+                        synth.knock(0.3f + 0.7f * e.intensity)
+                        if (!cpu || e.player == 0) haptics.tick()
+                    }
+                    is AirHockey.Event.Wall -> if (e.intensity > 0.08f) synth.knock(0.15f + 0.4f * e.intensity)
+                    is AirHockey.Event.Goal -> {
+                        synth.play(if (e.scorer == 0 || !cpu) 784f else 392f, 220, 0.45f)
+                        haptics.heavy()
+                        blue = game.scores[0]; red = game.scores[1]
                     }
                 }
+                game.winner?.let { w ->
+                    playing = false
+                    finished = true
+                    currentTally.record(w + 1)
+                }
+                frame++
+                playing
             }
 
             val tableWidth = maxWidth.coerceAtMost(maxHeight / aspect)

@@ -20,10 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.RestartAlt
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -56,9 +52,16 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import com.toolbox.app.ui.common.GameGuardDialog
+import com.toolbox.app.ui.common.NewGameButton
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberBestScore
+import com.toolbox.app.ui.common.rememberGameGuard
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.common.rememberToneSynth
 import com.toolbox.app.ui.theme.GoogleColors
@@ -76,6 +79,8 @@ fun SimonScreen(onBack: () -> Unit) {
     val haptics = rememberHaptics()
     val synth = rememberToneSynth()
     val (best, submitBest) = rememberBestScore("simon-round")
+    val guard = rememberGameGuard()
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
 
     var phase by rememberSaveable { mutableStateOf(Phase.Idle) }
     var encoded by rememberSaveable { mutableStateOf("") }
@@ -120,24 +125,40 @@ fun SimonScreen(onBack: () -> Unit) {
         }
     }
 
-    // Playback. Input is locked (phase != Input) until the whole sequence has been shown.
-    // Keyed on the encoded game too, so a restored or restarted game replays from the top.
-    LaunchedEffect(phase, encoded) {
+    // Leaving the app mid-round means the sequence is shown again on return, and you repeat it from the start.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
         val g = game
-        if (phase != Phase.Showing || g == null) return@LaunchedEffect
-        lit = -1
-        delay(if (g.round == 1) 500 else 900)
-        held = -1 // in case a finger is still resting on the last pad
-        val tone = SimonGame.toneMs(g.round)
-        val gap = SimonGame.gapMs(g.round)
-        for (pad in g.sequence) {
-            lit = pad
-            synth.play(PAD_TONES_HZ[pad], tone)
-            delay(tone.toLong())
+        if (g != null && (phase == Phase.Showing || phase == Phase.Input)) {
+            encoded = g.copy(inputIndex = 0).encode()
+            phase = Phase.Showing
             lit = -1
-            delay(gap.toLong())
+            held = -1
         }
-        phase = Phase.Input
+    }
+
+    // Playback. Input is locked (phase != Input) until the whole sequence has been shown.
+    // Keyed on the encoded game too, so a restored or restarted game replays from the top. It only plays while the
+    // app is in view: leaving stops it, and coming back starts it again from the beginning. The same goes for the
+    // "Start a new game?" question, so cancelling it doesn't leave you having missed the sequence.
+    LaunchedEffect(phase, encoded, lifecycle, guard.isAsking) {
+        val g = game
+        if (guard.isAsking) lit = -1
+        if (phase != Phase.Showing || g == null || guard.isAsking) return@LaunchedEffect
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            lit = -1
+            delay(if (g.round == 1) 500 else 900)
+            held = -1 // in case a finger is still resting on the last pad
+            val tone = SimonGame.toneMs(g.round)
+            val gap = SimonGame.gapMs(g.round)
+            for (pad in g.sequence) {
+                lit = pad
+                synth.play(PAD_TONES_HZ[pad], tone)
+                delay(tone.toLong())
+                lit = -1
+                delay(gap.toLong())
+            }
+            phase = Phase.Input
+        }
     }
 
     // After a mistake, blink the pad that should have been pressed.
@@ -156,19 +177,22 @@ fun SimonScreen(onBack: () -> Unit) {
         title = "Simon",
         onBack = onBack,
         actions = {
-            IconButton(onClick = ::start, enabled = phase != Phase.Idle) {
-                Icon(Icons.Filled.RestartAlt, contentDescription = "Restart")
-            }
+            NewGameButton(
+                onClick = { guard.run((phase == Phase.Showing || phase == Phase.Input) && round > 1) { start() } },
+                enabled = phase != Phase.Idle,
+            )
         },
     ) { padding ->
         ToolBody(padding) {
+            // The best, like the end message, counts rounds repeated in full: reaching round 5 means 4 repeated.
             Text(
                 when (phase) {
                     Phase.Idle -> if (best > 0) "Best $best" else "Simon says…"
-                    Phase.Over -> "You got to round $round"
+                    Phase.Over -> repeatedText(game?.completed ?: 0) + if (best > 0) "  ·  Best $best" else ""
                     else -> "Round $round" + if (best > 0) "  ·  Best $best" else ""
                 },
                 style = MaterialTheme.typography.titleLarge,
+                textAlign = TextAlign.Center,
             )
             Text(
                 when (phase) {
@@ -197,6 +221,13 @@ fun SimonScreen(onBack: () -> Unit) {
             )
         }
     }
+    GameGuardDialog(guard)
+}
+
+private fun repeatedText(completed: Int) = when (completed) {
+    0 -> "No rounds repeated"
+    1 -> "You repeated 1 round"
+    else -> "You repeated $completed rounds"
 }
 
 @Composable

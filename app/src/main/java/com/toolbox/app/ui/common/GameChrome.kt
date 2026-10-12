@@ -140,13 +140,14 @@ fun GameFooter(
     onPlayAgain: () -> Unit,
     modifier: Modifier = Modifier,
     hint: String? = null,
+    action: String = "Play again",
 ) {
     val shown by animateFloatAsState(if (over != null) 1f else 0f, tween(220), label = "gameOver")
     Box(modifier.widthIn(max = 400.dp).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
         // An invisible card with a detail line sets the height, whether or not the real one has a detail.
-        GameOverCard(GameOver(" ", " "), onAction = {}, enabled = false, modifier = Modifier.graphicsLayer { alpha = 0f }.clearAndSetSemantics { })
+        GameOverCard(GameOver(" ", " "), onAction = {}, enabled = false, action = action, modifier = Modifier.graphicsLayer { alpha = 0f }.clearAndSetSemantics { })
         if (over != null) {
-            GameOverCard(over, onAction = onPlayAgain, modifier = Modifier.graphicsLayer { alpha = shown })
+            GameOverCard(over, onAction = onPlayAgain, action = action, modifier = Modifier.graphicsLayer { alpha = shown })
         }
         TurnStatus(
             turn, turnColor, hint = hint,
@@ -166,6 +167,9 @@ class GameGuard internal constructor() {
     internal class Ask(val title: String, val text: String, val confirm: String, val action: () -> Unit)
 
     internal var asking by mutableStateOf<Ask?>(null)
+
+    /** Whether the question is on screen, for a real-time game to hold still behind it. */
+    val isAsking: Boolean get() = asking != null
 
     /** Runs [action] at once if nothing would be lost, or once the player agrees when the game is [underWay]. */
     fun run(

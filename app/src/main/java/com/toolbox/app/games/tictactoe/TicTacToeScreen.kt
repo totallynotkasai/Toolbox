@@ -47,49 +47,9 @@ import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.common.rememberTally
 import com.toolbox.app.ui.theme.GoogleColors
 import kotlinx.coroutines.delay
-import kotlin.random.Random
-
-private const val X = 1
-private const val O = 2
-private val LINES = listOf(
-    listOf(0, 1, 2), listOf(3, 4, 5), listOf(6, 7, 8),
-    listOf(0, 3, 6), listOf(1, 4, 7), listOf(2, 5, 8),
-    listOf(0, 4, 8), listOf(2, 4, 6),
-)
 
 private val X_COLOR = GoogleColors.Red
 private val O_COLOR = GoogleColors.Blue
-
-internal fun winLine(b: List<Int>): List<Int>? = LINES.firstOrNull { (a, c, d) -> b[a] != 0 && b[a] == b[c] && b[a] == b[d] }
-
-/** Full minimax; the board is tiny so no pruning needed. Prefers faster wins / slower losses via depth. */
-private fun minimax(b: MutableList<Int>, turn: Int, depth: Int): Int {
-    winLine(b)?.let { return if (b[it[0]] == O) 10 - depth else depth - 10 }
-    if (b.none { it == 0 }) return 0
-    var best = if (turn == O) Int.MIN_VALUE else Int.MAX_VALUE
-    for (i in 0 until 9) if (b[i] == 0) {
-        b[i] = turn
-        val s = minimax(b, if (turn == O) X else O, depth + 1)
-        b[i] = 0
-        best = if (turn == O) maxOf(best, s) else minOf(best, s)
-    }
-    return best
-}
-
-/** O's best square by full minimax. */
-internal fun bestMove(b: List<Int>): Int {
-    val work = b.toMutableList()
-    return b.indices.filter { b[it] == 0 }.maxBy { i -> work[i] = O; val s = minimax(work, X, 1); work[i] = 0; s }
-}
-
-/** The computer (O) plays the best move only 40% of the time, and otherwise any free square. */
-internal fun aiMove(b: List<Int>, random: Random = Random): Int {
-    val empty = b.indices.filter { b[it] == 0 }
-    return if (random.nextFloat() > 0.4f) empty.random(random) else bestMove(b)
-}
-
-/** Who moves first: X, unless it's the computer's (O's) turn to start a solo game. */
-internal fun firstTurn(vsComputer: Boolean, cpuFirst: Boolean) = if (vsComputer && cpuFirst) O else X
 
 @Composable
 fun TicTacToeScreen(onBack: () -> Unit) {
@@ -103,7 +63,7 @@ fun TicTacToeScreen(onBack: () -> Unit) {
     var turn by rememberSaveable { mutableIntStateOf(X) }
 
     val line = winLine(board)
-    val over = line != null || board.none { it == 0 }
+    val over = outcome(board) != null
     val cpuTurn = mode.vsComputer && turn == O && !over
     // X always moves first in two-player games and you are X against the computer, so an X on the board means
     // you have played.
@@ -115,11 +75,10 @@ fun TicTacToeScreen(onBack: () -> Unit) {
         board = next
         turn = if (turn == X) O else X
         haptics.click()
-        val l = winLine(next)
-        when {
-            // In the tally, side a is you (or X) and side b the computer (or O).
-            l != null -> { tally.record(next[l[0]]); haptics.heavy() }
-            next.none { it == 0 } -> tally.record(0)
+        // In the tally, side a is you (or X) and side b the computer (or O), and 0 is a draw.
+        outcome(next)?.let { result ->
+            tally.record(result)
+            if (result != 0) haptics.heavy()
         }
     }
 

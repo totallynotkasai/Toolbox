@@ -19,12 +19,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lightbulb
-import androidx.compose.material.icons.filled.RestartAlt
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -33,7 +32,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
@@ -49,24 +47,38 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.toolbox.app.ui.common.GameFooter
+import com.toolbox.app.ui.common.GameGuardDialog
+import com.toolbox.app.ui.common.GameOver
+import com.toolbox.app.ui.common.NewGameButton
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberBestScore
+import com.toolbox.app.ui.common.rememberGameGuard
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.theme.GoogleColors
 
 private val LIGHT_CORE = Color(0xFFFFF4C2)
 
+/** How far over par: "par" for none, otherwise "+2". */
+private fun overParLabel(over: Int) = if (over == 0) "par" else "+$over"
+
 @Composable
 fun LightsOutScreen(onBack: () -> Unit) {
     val haptics = rememberHaptics()
-    val (best, submit) = rememberBestScore("lightsout-moves", lowerIsBetter = true)
+    val guard = rememberGameGuard()
+    // The best is the fewest moves over par, since puzzles differ in length. It's saved plus one, because the store
+    // reads 0 as "no best yet" and 0 over par is the best there is.
+    val (bestPlusOne, submit) = rememberBestScore("lightsout-overpar", lowerIsBetter = true)
+    val best = bestPlusOne - 1
     var start by rememberSaveable { mutableIntStateOf(LightsOutBoard.random().bits) }
     var bits by rememberSaveable { mutableIntStateOf(start) }
     var moves by rememberSaveable { mutableIntStateOf(0) }
     var hintCell by rememberSaveable { mutableIntStateOf(-1) }
     var usedHint by rememberSaveable { mutableStateOf(false) }
+    var newBest by rememberSaveable { mutableStateOf(false) }
     val board = LightsOutBoard(bits)
+    // Par is fixed for the puzzle: the fewest presses that solve it from the start.
     val par = remember(start) { LightsOutBoard(start).solution()?.size ?: 0 }
     val solved = board.isSolved
 
@@ -77,7 +89,10 @@ fun LightsOutScreen(onBack: () -> Unit) {
         hintCell = -1
         if (LightsOutBoard(bits).isSolved) {
             haptics.heavy()
-            if (!usedHint) submit(moves)
+            if (!usedHint) {
+                newBest = best < 0 || moves - par < best
+                submit(moves - par + 1)
+            }
         } else {
             haptics.click()
         }
@@ -85,33 +100,25 @@ fun LightsOutScreen(onBack: () -> Unit) {
 
     fun newPuzzle() {
         start = LightsOutBoard.random().bits
-        bits = start; moves = 0; hintCell = -1; usedHint = false
+        bits = start; moves = 0; hintCell = -1; usedHint = false; newBest = false
     }
 
     ToolScaffold(
         title = "Lights Out",
         onBack = onBack,
         actions = {
-            IconButton(onClick = { bits = start; moves = 0; hintCell = -1 }, enabled = moves > 0) {
-                Icon(Icons.Filled.RestartAlt, contentDescription = "Restart this puzzle")
-            }
+            NewGameButton(
+                onClick = {
+                    guard.run(moves > 0 && !solved, title = "Start a new puzzle?", text = "Your moves on this one will be lost.", confirm = "New puzzle") { newPuzzle() }
+                },
+                description = "New puzzle",
+            )
         },
     ) { padding ->
         ToolBody(padding) {
+            Text("Moves $moves  ·  Par $par", style = MaterialTheme.typography.titleLarge)
             Text(
-                when {
-                    !solved -> "Moves $moves" + if (best > 0) "  ·  Best $best" else ""
-                    moves <= par -> "Perfect! Solved in $moves moves"
-                    else -> "Solved in $moves moves"
-                },
-                style = MaterialTheme.typography.titleLarge,
-            )
-            Text(
-                when {
-                    solved && usedHint -> "Hints were used, so this one doesn't count towards your best"
-                    solved -> "The fewest possible was $par"
-                    else -> "${board.lightsOn} lights on  ·  can be solved in $par"
-                },
+                if (best >= 0) "Best: ${overParLabel(best)}" else "Solve it in as few moves as you can",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -139,11 +146,21 @@ fun LightsOutScreen(onBack: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(24.dp))
-            Text(
-                if (solved) " " else "Tap a light to switch it and its neighbours. Turn them all off.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
+            val over = moves - par
+            GameFooter(
+                over = if (!solved) null else GameOver(
+                    if (over == 0) "Perfect!" else "Solved, $over over par",
+                    when {
+                        usedHint -> "$moves moves · hints used, so it doesn't count"
+                        newBest -> "$moves moves · New best!"
+                        else -> "$moves moves · Best: ${overParLabel(best)}"
+                    },
+                ),
+                turn = "${board.lightsOn} lights on",
+                turnColor = null,
+                hint = "Tap a light to switch it and its neighbours. Turn them all off.",
+                onPlayAgain = ::newPuzzle,
+                action = "New puzzle",
             )
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -157,10 +174,15 @@ fun LightsOutScreen(onBack: () -> Unit) {
                     Icon(Icons.Filled.Lightbulb, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
                     Text("Hint")
                 }
-                Button(onClick = ::newPuzzle) { Text(if (solved) "Play again" else "New puzzle") }
+                // Once solved, replaying the same puzzle knowing the answer can't count, so Restart is off.
+                OutlinedButton(onClick = { bits = start; moves = 0; hintCell = -1 }, enabled = moves > 0 && !solved) {
+                    Icon(Icons.Filled.Replay, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                    Text("Restart")
+                }
             }
         }
     }
+    GameGuardDialog(guard)
 }
 
 @Composable

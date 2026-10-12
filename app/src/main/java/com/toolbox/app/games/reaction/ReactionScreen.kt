@@ -16,9 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,8 +43,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.toolbox.app.ui.common.GameGuardDialog
+import com.toolbox.app.ui.common.NewGameButton
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberBestScore
+import com.toolbox.app.ui.common.rememberGameGuard
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.theme.GoogleColors
 import kotlinx.coroutines.delay
@@ -59,7 +60,7 @@ const val REACTION_ROUNDS = 5
 const val MIN_REACTION_MS = 100L
 
 /**
- * Reaction time from the first green frame to the finger going down.
+ * Reaction time from the vsync at which green reaches the screen to the finger going down.
  * Choreographer frame times use `System.nanoTime()`, and pointer events use `SystemClock.uptimeMillis()`;
  * both are CLOCK_MONOTONIC on Android, so they can be subtracted directly.
  */
@@ -81,6 +82,7 @@ private val DARK_TEXT = Color(0xFF202124)
 fun ReactionScreen(onBack: () -> Unit) {
     val haptics = rememberHaptics()
     val (best, submit) = rememberBestScore("reaction-avg", lowerIsBetter = true)
+    val guard = rememberGameGuard()
     var phase by rememberSaveable { mutableStateOf(Phase.Ready) }
     var times by rememberSaveable { mutableStateOf(listOf<Long>()) }
     var attempt by rememberSaveable { mutableIntStateOf(0) } // restarts the wait even when phase is unchanged
@@ -119,7 +121,10 @@ fun ReactionScreen(onBack: () -> Unit) {
         delay(Random.nextLong(1500, 4001))
         if (phase != Phase.Waiting) return@LaunchedEffect // tapped too soon in the meantime
         phase = Phase.Go
-        // Runs in the same frame that first draws green, so this is when the colour change starts rendering.
+        // The first frame drawn green only starts rendering at this vsync; it reaches the screen a frame later. So
+        // the clock starts at the next vsync, when green actually appears, rather than reading a frame slow.
+        // A tap before then still reads as "too soon", since it can only be a guess.
+        withFrameNanos { }
         withFrameNanos { goNanos = it }
     }
 
@@ -136,9 +141,15 @@ fun ReactionScreen(onBack: () -> Unit) {
         title = "Reaction Time",
         onBack = onBack,
         actions = {
-            IconButton(onClick = { times = emptyList(); newBest = false; phase = Phase.Ready }) {
-                Icon(Icons.Filled.RestartAlt, contentDescription = "Start over")
-            }
+            NewGameButton(
+                onClick = {
+                    guard.run(times.isNotEmpty() && phase != Phase.Done, title = "Start over?", text = "The rounds so far will be lost.", confirm = "Start over") {
+                        times = emptyList(); newBest = false; phase = Phase.Ready
+                    }
+                },
+                enabled = phase != Phase.Ready || times.isNotEmpty(),
+                description = "Start over",
+            )
         },
     ) { padding ->
         Box(
@@ -205,6 +216,7 @@ fun ReactionScreen(onBack: () -> Unit) {
             }
         }
     }
+    GameGuardDialog(guard)
 }
 
 @Composable

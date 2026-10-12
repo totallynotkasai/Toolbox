@@ -13,16 +13,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,10 +47,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.toolbox.app.ui.common.GameGuardDialog
+import com.toolbox.app.ui.common.NewGameButton
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberBestScore
+import com.toolbox.app.ui.common.rememberGameGuard
+import com.toolbox.app.ui.common.rememberGameLoop
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.common.rememberToneSynth
+import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.pow
@@ -73,15 +78,46 @@ fun StackScreen(onBack: () -> Unit) {
     val synth = rememberToneSynth()
     // Saved, so a recreated screen carries on with the same tower.
     val game = rememberSaveable(saver = Saver(save = { it.save() }, restore = { StackGame().apply { restore(it) } })) { StackGame() }
+    val guard = rememberGameGuard()
     val (best, submitBest) = rememberBestScore("stack")
+    // tap() runs from a long-lived pointer handler, so it reads the best through this.
+    val currentBest by rememberUpdatedState(best)
     var frame by remember { mutableLongStateOf(0L) }
     var state by remember { mutableStateOf(game.state) }
     var score by remember { mutableIntStateOf(game.score) }
     var perfectLabel by remember { mutableStateOf<String?>(null) }
-    var perfectAge by remember { mutableStateOf(1f) } // seconds since the last perfect, for the ring and label
+    var perfectAge by remember { mutableFloatStateOf(1f) } // seconds since the last perfect, for the ring and label
     val falling = remember { mutableListOf<Falling>() }
-    var camera by remember { mutableStateOf(cameraFor(game)) } // how far the view has risen, in play-area widths
-    var wake by remember { mutableIntStateOf(0) }
+    var camera by remember { mutableFloatStateOf(cameraFor(game)) } // how far the view has risen, in play-area widths
+    var newBest by rememberSaveable { mutableStateOf(false) }
+
+    // One loop for the sliding block, falling offcuts and the rising camera; it idles when nothing is moving.
+    val loop = rememberGameLoop { dt ->
+        val targetCamera = cameraFor(game)
+        game.step(dt)
+        camera += (targetCamera - camera) * (1 - exp(-7f * dt))
+        perfectAge = (perfectAge + dt).coerceAtMost(1f)
+        val it = falling.iterator()
+        while (it.hasNext()) {
+            val f = it.next()
+            f.vy += 3.2f * dt
+            f.y += f.vy * dt
+            f.angle += f.spin * dt
+            if (f.y > 3f) it.remove()
+        }
+        frame++
+        game.state == StackGame.State.Playing || falling.isNotEmpty() || abs(targetCamera - camera) > 0.0005f || perfectAge < 1f
+    }
+
+    fun newGame() {
+        game.reset()
+        falling.clear()
+        perfectLabel = null
+        newBest = false
+        state = game.state
+        score = game.score
+        loop.wake() // the camera drops back to the base
+    }
 
     fun tap() {
         when (game.state) {
@@ -90,6 +126,7 @@ fun StackScreen(onBack: () -> Unit) {
                 game.start()
                 camera = 0f
                 perfectLabel = null
+                newBest = false
                 haptics.click()
             }
             StackGame.State.Playing -> when (val d = game.drop()) {
@@ -110,6 +147,8 @@ fun StackScreen(onBack: () -> Unit) {
                     falling += Falling(d.offcut, spin = 90f)
                     synth.buzz(250)
                     haptics.heavy()
+                    // Decided before the best is saved, so equalling it isn't a new best.
+                    newBest = game.score > currentBest
                     submitBest(game.score)
                 }
                 null -> Unit
@@ -117,36 +156,19 @@ fun StackScreen(onBack: () -> Unit) {
         }
         state = game.state
         score = game.score
-        wake++
+        loop.wake()
     }
 
-    // One loop for the sliding block, falling offcuts and the rising camera; it stops when nothing is moving.
-    LaunchedEffect(wake) {
-        var last = withFrameNanos { it }
-        while (true) {
-            val targetCamera = cameraFor(game)
-            val cameraMoving = kotlin.math.abs(targetCamera - camera) > 0.0005f
-            if (game.state != StackGame.State.Playing && falling.isEmpty() && !cameraMoving && perfectAge >= 1f) break
-            withFrameNanos { now ->
-                val dt = ((now - last) / 1e9f).coerceIn(0f, 0.05f)
-                last = now
-                game.step(dt)
-                camera += (targetCamera - camera) * (1 - exp(-7f * dt))
-                perfectAge = (perfectAge + dt).coerceAtMost(1f)
-                val it = falling.iterator()
-                while (it.hasNext()) {
-                    val f = it.next()
-                    f.vy += 3.2f * dt
-                    f.y += f.vy * dt
-                    f.angle += f.spin * dt
-                    if (f.y > 3f) it.remove()
-                }
-                frame++
-            }
-        }
-    }
-
-    ToolScaffold(title = "Stack Tower", onBack = onBack) { padding ->
+    ToolScaffold(
+        title = "Stack Tower",
+        onBack = onBack,
+        actions = {
+            NewGameButton(
+                onClick = { guard.run(state == StackGame.State.Playing && score > 0) { newGame() } },
+                enabled = state != StackGame.State.Ready,
+            )
+        },
+    ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding).padding(16.dp), contentAlignment = Alignment.TopCenter) {
             val dark = MaterialTheme.colorScheme.surface.luminance() < 0.3f
             val skyTop = if (dark) Color(0xFF1B1F3A) else Color(0xFFDCE8FF)
@@ -182,7 +204,7 @@ fun StackScreen(onBack: () -> Unit) {
                 Spacer(Modifier.height(12.dp))
                 val label = when {
                     state == StackGame.State.Ready -> "Tap to drop each block on the one below.\nLine them up exactly for a perfect."
-                    state == StackGame.State.Over -> (if (score > 0 && score >= best) "New best!\n" else "") + "Tap to play again"
+                    state == StackGame.State.Over -> (if (newBest) "New best!\n" else "") + "Tap to play again"
                     perfectAge < 0.9f -> perfectLabel
                     else -> null
                 }
@@ -199,6 +221,7 @@ fun StackScreen(onBack: () -> Unit) {
             }
         }
     }
+    GameGuardDialog(guard)
 }
 
 private fun DrawScope.drawTower(game: StackGame, falling: List<Falling>, camera: Float, perfectAge: Float) {
