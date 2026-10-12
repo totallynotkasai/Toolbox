@@ -1,8 +1,10 @@
 package com.toolbox.app.home
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -18,8 +20,10 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -47,6 +51,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -55,8 +61,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.Hyphens
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.Category
@@ -64,9 +78,15 @@ import com.toolbox.app.Favourites
 import com.toolbox.app.Tool
 import com.toolbox.app.ui.common.rememberPref
 import com.toolbox.app.ui.theme.GoogleColors
+import kotlinx.coroutines.launch
 
 /** Filter chip value for the Favourites group; the others are [Category] names, and null is All. */
 private const val FAVOURITES = "favourites"
+
+private val GRID_PADDING = 16.dp
+private val GRID_SPACING = 12.dp
+private val MIN_TILE_WIDTH = 156.dp
+private val TILE_PADDING = 16.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,6 +104,19 @@ fun HomeScreen(onOpen: (Tool) -> Unit, startWithSettings: Boolean = false) {
     val categories = Category.entries.filter { filter == null || filter == it.name }
         .map { category -> category to matching.filter { it.category == category } }
         .filter { it.second.isNotEmpty() }
+
+    val grid = rememberLazyGridState()
+    val scope = rememberCoroutineScope()
+    val focus = LocalFocusManager.current
+    fun showEverything() {
+        query = ""
+        filter = null
+        focus.clearFocus()
+        scroll.state.heightOffset = 0f
+        scope.launch { grid.scrollToItem(0) }
+    }
+    // Back undoes a search or filter before it leaves the app. With the keyboard up, Android closes that first.
+    BackHandler(enabled = query.isNotEmpty() || filter != null) { showEverything() }
 
     Scaffold(
         modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
@@ -104,36 +137,46 @@ fun HomeScreen(onOpen: (Tool) -> Unit, startWithSettings: Boolean = false) {
         },
         containerColor = MaterialTheme.colorScheme.surface,
     ) { padding ->
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 156.dp),
-            contentPadding = PaddingValues(
-                start = 16.dp, end = 16.dp,
-                top = padding.calculateTopPadding(),
-                bottom = padding.calculateBottomPadding() + 24.dp,
-            ),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            item(span = { GridItemSpan(maxLineSpan) }, key = "search") {
-                SearchField(query, onChange = { query = it })
-            }
-            item(span = { GridItemSpan(maxLineSpan) }, key = "chips") {
-                CategoryChips(filter, onSelect = { filter = it })
-            }
-            // A favourite shows here and in its own category, so its keys need a prefix to stay unique.
-            if (favouriteTools.isNotEmpty()) {
-                group("Favourites", "favourites", favouriteTools, favourites, onOpen, toggleFavourite)
-            }
-            categories.forEach { (category, tools) ->
-                group(category.title, category.name, tools, favourites, onOpen, toggleFavourite)
-            }
-            when {
-                filter == FAVOURITES && favouriteTools.isEmpty() && query.isBlank() ->
-                    item(span = { GridItemSpan(maxLineSpan) }, key = "no-favourites") { NoFavourites() }
-                favouriteTools.isEmpty() && categories.isEmpty() ->
-                    item(span = { GridItemSpan(maxLineSpan) }, key = "empty") {
-                        NoMatches(onReset = { query = ""; filter = null })
-                    }
+        BoxWithConstraints {
+            // As many columns of at least MIN_TILE_WIDTH as fit, like GridCells.Adaptive, worked out here so the
+            // tile titles can be measured at the width they'll get.
+            val gridWidth = maxWidth - GRID_PADDING * 2
+            val columns = ((gridWidth + GRID_SPACING) / (MIN_TILE_WIDTH + GRID_SPACING)).toInt().coerceAtLeast(1)
+            val tileWidth = (gridWidth - GRID_SPACING * (columns - 1)) / columns
+            val titleStyle = MaterialTheme.typography.titleMedium.copy(hyphens = Hyphens.Auto, lineBreak = LineBreak.Heading)
+            val tileTitle = TileTitle(titleStyle, rememberTitleLines(tileWidth - TILE_PADDING * 2, titleStyle))
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(columns),
+                state = grid,
+                contentPadding = PaddingValues(
+                    start = GRID_PADDING, end = GRID_PADDING,
+                    top = padding.calculateTopPadding(),
+                    bottom = padding.calculateBottomPadding() + 24.dp,
+                ),
+                horizontalArrangement = Arrangement.spacedBy(GRID_SPACING),
+                verticalArrangement = Arrangement.spacedBy(GRID_SPACING),
+            ) {
+                item(span = { GridItemSpan(maxLineSpan) }, key = "search") {
+                    SearchField(query, onChange = { query = it }, onSearch = { focus.clearFocus() })
+                }
+                item(span = { GridItemSpan(maxLineSpan) }, key = "chips") {
+                    CategoryChips(filter, onSelect = { filter = it })
+                }
+                // A favourite shows here and in its own category, so its keys need a prefix to stay unique.
+                if (favouriteTools.isNotEmpty()) {
+                    group("Favourites", "favourites", favouriteTools, favourites, tileTitle, onOpen, toggleFavourite)
+                }
+                categories.forEach { (category, tools) ->
+                    group(category.title, category.name, tools, favourites, tileTitle, onOpen, toggleFavourite)
+                }
+                when {
+                    filter == FAVOURITES && favouriteTools.isEmpty() && query.isBlank() ->
+                        item(span = { GridItemSpan(maxLineSpan) }, key = "no-favourites") { NoFavourites() }
+                    favouriteTools.isEmpty() && categories.isEmpty() ->
+                        item(span = { GridItemSpan(maxLineSpan) }, key = "empty") {
+                            NoMatches(onReset = ::showEverything)
+                        }
+                }
             }
         }
     }
@@ -146,6 +189,7 @@ private fun LazyGridScope.group(
     key: String,
     tools: List<Tool>,
     favourites: Set<String>,
+    tileTitle: TileTitle,
     onOpen: (Tool) -> Unit,
     onToggleFavourite: (Tool) -> Unit,
 ) {
@@ -158,7 +202,10 @@ private fun LazyGridScope.group(
         )
     }
     items(tools, key = { "$key-${it.route}" }) { tool ->
-        ToolCard(tool, favourite = tool.route in favourites, onClick = { onOpen(tool) }, onToggleFavourite = { onToggleFavourite(tool) })
+        ToolCard(
+            tool, favourite = tool.route in favourites, title = tileTitle,
+            onClick = { onOpen(tool) }, onToggleFavourite = { onToggleFavourite(tool) },
+        )
     }
 }
 
@@ -245,8 +292,26 @@ private fun Modifier.bleedHorizontally(amount: Dp) = layout { measurable, constr
     layout(placeable.width - extra, placeable.height) { placeable.place(-extra / 2, 0) }
 }
 
+/** How tile titles are set: [lines] is 1, or 2 once any title needs a second line at this width and font size. */
+private data class TileTitle(val style: TextStyle, val lines: Int)
+
+/**
+ * The lines the longest tool title takes in [width], at most 2. Every tool is measured, not just those shown, so the
+ * tiles don't change height while searching.
+ */
 @Composable
-private fun SearchField(query: String, onChange: (String) -> Unit) {
+private fun rememberTitleLines(width: Dp, style: TextStyle): Int {
+    val measurer = rememberTextMeasurer(cacheSize = 0)
+    val density = LocalDensity.current
+    return remember(width, style, density) {
+        // A pixel to spare, in case the grid rounds a column narrower than this.
+        val px = (with(density) { width.roundToPx() } - 1).coerceAtLeast(1)
+        Tool.entries.maxOf { measurer.measure(it.title, style, maxLines = 2, constraints = Constraints(maxWidth = px)).lineCount }
+    }
+}
+
+@Composable
+private fun SearchField(query: String, onChange: (String) -> Unit, onSearch: () -> Unit) {
     OutlinedTextField(
         value = query,
         onValueChange = onChange,
@@ -261,6 +326,8 @@ private fun SearchField(query: String, onChange: (String) -> Unit) {
         singleLine = true,
         shape = CircleShape,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        // The results already show as you type, so the search key just puts the keyboard away to show them all.
+        keyboardActions = KeyboardActions(onSearch = { onSearch() }),
         colors = OutlinedTextFieldDefaults.colors(
             unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -270,13 +337,13 @@ private fun SearchField(query: String, onChange: (String) -> Unit) {
 }
 
 @Composable
-private fun ToolCard(tool: Tool, favourite: Boolean, onClick: () -> Unit, onToggleFavourite: () -> Unit) {
+private fun ToolCard(tool: Tool, favourite: Boolean, title: TileTitle, onClick: () -> Unit, onToggleFavourite: () -> Unit) {
     Card(
         onClick = onClick,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         shape = MaterialTheme.shapes.large,
     ) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+        Column(Modifier.fillMaxWidth().padding(TILE_PADDING)) {
             Row(verticalAlignment = Alignment.Top) {
                 Box(
                     Modifier.size(48.dp).clip(CircleShape).background(tool.accent.copy(alpha = 0.16f)),
@@ -295,7 +362,9 @@ private fun ToolCard(tool: Tool, favourite: Boolean, onClick: () -> Unit, onTogg
                 }
             }
             Spacer(Modifier.height(20.dp))
-            Text(tool.title, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+            // At large font sizes a title wraps, then ends in an ellipsis. Every tile keeps room for as many lines
+            // as the longest title needs, so the tiles in a row stay the same height.
+            Text(tool.title, style = title.style, minLines = title.lines, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
 }

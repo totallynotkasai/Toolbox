@@ -1,12 +1,20 @@
 <resources>
-    <style name="Theme.Toolbox" parent="android:Theme.Material.Light.NoActionBar">
+    <!-- The window theme follows the system's dark mode (values-night swaps the parent), so the window behind the
+         Compose content is never white in dark mode, during screen transitions included. -->
+    <style name="Base.Theme.Toolbox" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <style name="Theme.Toolbox" parent="Base.Theme.Toolbox">
+        <item name="android:windowBackground">@color/window_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
-    <style name="Theme.Toolbox.Starting" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@color/splash_background</item>
+    <!-- The splash icon is the launcher icon's white glyph, so it sits on the launcher's blue in both modes;
+         on the light background it would otherwise be invisible. -->
+    <style name="Theme.Toolbox.Starting" parent="Theme.SplashScreen.IconBackground">
+        <item name="windowSplashScreenBackground">@color/window_background</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/ic_launcher_background</item>
         <item name="postSplashScreenTheme">@style/Theme.Toolbox</item>
     </style>
 </resources>
