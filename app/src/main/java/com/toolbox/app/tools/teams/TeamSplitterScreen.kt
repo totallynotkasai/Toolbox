@@ -62,12 +62,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.error
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.OnShake
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.rememberAnnouncer
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.common.rememberPref
 import com.toolbox.app.ui.common.rememberShakeEnabled
@@ -93,7 +100,8 @@ fun TeamSplitterScreen(onBack: () -> Unit) {
     var teamCount by rememberPref("teams_count", 2)
     var perTeam by rememberPref("teams_per_team", 3)
     var input by rememberSaveable { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
+    var nameError by remember { mutableStateOf<String?>(null) }
+    val say = rememberAnnouncer()
     var confirmClear by remember { mutableStateOf(false) }
     var teams by rememberSaveable(stateSaver = TeamsSaver) { mutableStateOf(emptyList<List<String>>()) }
     var deal by rememberSaveable { mutableIntStateOf(0) } // bumped on every split so the cards re-animate
@@ -115,11 +123,13 @@ fun TeamSplitterScreen(onBack: () -> Unit) {
         val seen = names.mapTo(mutableSetOf()) { it.lowercase() }
         val fresh = parsed.filter { seen.add(it.lowercase()) }
         val room = MAX_PEOPLE - n
-        error = when {
+        nameError = when {
             fresh.isEmpty() -> if (parsed.size == 1) "${parsed[0]} is already on the list" else "Those names are already on the list"
             room <= 0 || fresh.size > room -> "The list holds up to $MAX_PEOPLE people"
             else -> null
         }
+        // Focus stays in the field, so TalkBack wouldn't otherwise notice the message under it.
+        nameError?.let(say)
         if (fresh.isNotEmpty() && room > 0) {
             setNames(names + fresh.take(room))
             input = ""
@@ -131,6 +141,7 @@ fun TeamSplitterScreen(onBack: () -> Unit) {
         teams = splitTeams(names, splitInto)
         deal++
         haptics.heavy()
+        say("Split into ${teams.size} teams")
     }
 
     OnShake(shake.value) { split() } // The detector's cooldown stops a shake re-dealing mid-animation.
@@ -161,12 +172,12 @@ fun TeamSplitterScreen(onBack: () -> Unit) {
             item("input") {
                 OutlinedTextField(
                     value = input,
-                    onValueChange = { input = it.replace('\u001E', ' ').replace('\u001F', ' '); error = null },
+                    onValueChange = { input = it.replace('\u001E', ' ').replace('\u001F', ' '); nameError = null },
                     label = { Text("Add a name") },
                     placeholder = { Text("Or paste a list: Sam, Alex, Jo…") },
                     singleLine = true,
-                    isError = error != null,
-                    supportingText = { Text(error ?: "Press Enter to add") },
+                    isError = nameError != null,
+                    supportingText = { Text(nameError ?: "Press Enter to add") },
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { add() }),
                     trailingIcon = {
@@ -174,7 +185,8 @@ fun TeamSplitterScreen(onBack: () -> Unit) {
                             Icon(Icons.Filled.Add, contentDescription = "Add name")
                         }
                     },
-                    modifier = column,
+                    // Read with the field when it's found again, in place of the generic "invalid input".
+                    modifier = column.semantics { nameError?.let { error(it) } },
                 )
             }
 
@@ -184,17 +196,19 @@ fun TeamSplitterScreen(onBack: () -> Unit) {
                         Text(
                             when (n) { 0 -> "No one yet"; 1 -> "1 person"; else -> "$n people" },
                             style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).semantics { heading() },
                         )
                         TextButton(onClick = { confirmClear = true }, enabled = n > 0) { Text("Clear all") }
                     }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         names.forEach { name ->
+                            // A tap anywhere on the chip removes the name, so that's what TalkBack offers.
                             InputChip(
                                 selected = false,
                                 onClick = { setNames(names - name) },
                                 label = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                trailingIcon = { Icon(Icons.Filled.Close, contentDescription = "Remove $name", Modifier.size(18.dp)) },
+                                trailingIcon = { Icon(Icons.Filled.Close, contentDescription = null, Modifier.size(18.dp)) },
+                                modifier = Modifier.semantics { onClick(label = "Remove $name") { setNames(names - name); true } },
                             )
                         }
                     }
@@ -209,27 +223,30 @@ fun TeamSplitterScreen(onBack: () -> Unit) {
                                 selected = bySize == (i == 1),
                                 onClick = { bySize = i == 1 },
                                 shape = SegmentedButtonDefaults.itemShape(i, 2),
-                            ) { Text(label, maxLines = 1) }
+                            ) { Text(label, textAlign = TextAlign.Center) } // wraps rather than cutting off at large font sizes
                         }
                     }
                     Spacer(Modifier.height(12.dp))
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         val value = if (bySize) shownPerTeam else shownTeamCount
                         val (lo, hi) = if (bySize) 1 to max(1, n - 1) else 2 to max(2, n)
-                        FilledTonalIconButton(
-                            onClick = { if (bySize) perTeam = value - 1 else teamCount = value - 1 },
-                            enabled = value > lo,
-                        ) { Icon(Icons.Filled.Remove, contentDescription = if (bySize) "Fewer per team" else "Fewer teams") }
+                        fun label(v: Int) = if (bySize) "$v per team" else "$v teams"
+                        fun change(v: Int) {
+                            if (bySize) perTeam = v else teamCount = v
+                            say(label(v))
+                        }
+                        FilledTonalIconButton(onClick = { change(value - 1) }, enabled = value > lo) {
+                            Icon(Icons.Filled.Remove, contentDescription = if (bySize) "Fewer per team" else "Fewer teams")
+                        }
                         Text(
-                            if (bySize) "$value per team" else "$value teams",
+                            label(value),
                             style = MaterialTheme.typography.titleLarge,
                             modifier = Modifier.widthIn(min = 120.dp),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            textAlign = TextAlign.Center,
                         )
-                        FilledTonalIconButton(
-                            onClick = { if (bySize) perTeam = value + 1 else teamCount = value + 1 },
-                            enabled = value < hi,
-                        ) { Icon(Icons.Filled.Add, contentDescription = if (bySize) "More per team" else "More teams") }
+                        FilledTonalIconButton(onClick = { change(value + 1) }, enabled = value < hi) {
+                            Icon(Icons.Filled.Add, contentDescription = if (bySize) "More per team" else "More teams")
+                        }
                     }
                     Spacer(Modifier.height(4.dp))
                     Text(
@@ -296,8 +313,13 @@ private fun TeamCard(index: Int, members: List<String>, modifier: Modifier) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(12.dp).clip(CircleShape).background(accent))
                 Spacer(Modifier.width(8.dp))
-                Text("Team ${index + 1}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                Text("${members.size}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Team ${index + 1}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).semantics { heading() })
+                Text(
+                    "${members.size}",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.semantics { contentDescription = if (members.size == 1) "1 person" else "${members.size} people" },
+                )
             }
             Spacer(Modifier.height(8.dp))
             members.forEach {

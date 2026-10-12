@@ -99,7 +99,7 @@ fun TurnStatus(text: String, color: Color?, modifier: Modifier = Modifier, hint:
                 Box(Modifier.size(16.dp).background(color, CircleShape))
                 Spacer(Modifier.width(8.dp))
             }
-            Text(text, style = MaterialTheme.typography.titleLarge)
+            Text(text, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
         }
         if (hint != null) {
             Text(hint, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)

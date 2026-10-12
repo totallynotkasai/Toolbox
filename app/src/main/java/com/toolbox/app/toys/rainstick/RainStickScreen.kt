@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -38,6 +39,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.GameLoop
 import com.toolbox.app.ui.common.ToolScaffold
@@ -90,6 +94,8 @@ fun RainStickScreen(onBack: () -> Unit) {
     val vibes = rememberVibes()
     var tick by remember { mutableLongStateOf(0L) }
     var flips by rememberSaveable { mutableIntStateOf(0) }
+    // For TalkBack: changes only when the grains start moving or come to rest, not as they fall.
+    var settled by remember { mutableStateOf(false) }
     val tubeAngle by animateFloatAsState(
         targetValue = flips * 180f,
         animationSpec = tween(1100, easing = FastOutSlowInEasing),
@@ -130,10 +136,12 @@ fun RainStickScreen(onBack: () -> Unit) {
             tick++
             val still = sim.hitEnergy == 0f && sim.fastest() < RainStickSim.SETTLED_SPEED && tubeAngle == flips * 180f
             rest.seconds = if (still) rest.seconds + dt else 0f
+            if (!still) settled = false
         }
         if (rest.seconds < REST_SECONDS) return@rememberGameLoop true
         vibes.stopBuzz()
         rest.sleep(gravity)
+        settled = true
         false
     }
 
@@ -146,7 +154,16 @@ fun RainStickScreen(onBack: () -> Unit) {
                 .padding(horizontal = 24.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Canvas(Modifier.fillMaxWidth().weight(1f)) {
+            val stickState = if (settled) "Settled" else "Grains falling"
+            Canvas(
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .semantics {
+                        contentDescription = "Rain stick"
+                        stateDescription = stickState
+                    },
+            ) {
                 if (tick < 0L) return@Canvas // reading tick redraws the grains every frame
                 drawRainStick(sim, tubeAngle, glass)
             }

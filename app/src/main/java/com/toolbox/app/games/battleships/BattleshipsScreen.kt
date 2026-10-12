@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -38,12 +37,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -51,6 +53,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import com.toolbox.app.ui.common.BoardTarget
+import com.toolbox.app.ui.common.BoardTargets
 import com.toolbox.app.ui.common.GameGuardDialog
 import com.toolbox.app.ui.common.GameModeChips
 import com.toolbox.app.ui.common.GameOver
@@ -58,12 +62,14 @@ import com.toolbox.app.ui.common.GameOverCard
 import com.toolbox.app.ui.common.NewGameButton
 import com.toolbox.app.ui.common.ScoresMenu
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.rememberAnnouncer
 import com.toolbox.app.ui.common.rememberGameGuard
 import com.toolbox.app.ui.common.rememberGameMode
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.common.rememberTally
 import com.toolbox.app.ui.common.rememberToneSynth
 import com.toolbox.app.ui.theme.GoogleColors
+import com.toolbox.app.ui.theme.ink
 import kotlinx.coroutines.delay
 
 /**
@@ -75,16 +81,50 @@ private enum class Phase { Place, Handoff, Aim, Result, CpuTurn, Over }
 
 private val HIT = GoogleColors.Red
 
+/** [ship] is "the Destroyer" or "your Destroyer". */
 private fun resultText(r: ShotResult?, ship: String?) = when (r) {
     ShotResult.Miss -> "Miss"
     ShotResult.Hit -> "Hit!"
-    ShotResult.Sunk -> "Sunk the $ship!"
+    ShotResult.Sunk -> "Sunk $ship!"
     null -> ""
+}
+
+/** A square's name as on a paper board: a letter for the column and a number for the row, "B7". */
+internal fun cellName(cell: Int) = "${'A' + cell % GRID}${cell / GRID + 1}"
+
+/**
+ * What TalkBack says about [cell] after its name. In the enemy's waters ([showShips] false) that's only what's been
+ * found there: "not fired", "miss", "hit" or "sunk Destroyer". A fleet on show also names the ship or the water, such
+ * as "your Destroyer, hit" or "water, miss", with [whose] ("your ") before the ship.
+ */
+internal fun cellState(board: Board, cell: Int, showShips: Boolean, whose: String = ""): String {
+    val ship = board.shipAt(cell)
+    val shot = board.isShot(cell)
+    if (!showShips) return when {
+        !shot -> "not fired"
+        ship < 0 -> "miss"
+        board.isSunk(ship) -> "sunk ${Fleet.NAMES[ship]}"
+        else -> "hit"
+    }
+    val found = when {
+        !shot -> null
+        ship < 0 -> "miss"
+        board.isSunk(ship) -> "sunk"
+        else -> "hit"
+    }
+    return listOfNotNull(if (ship < 0) "water" else "$whose${Fleet.NAMES[ship]}", found).joinToString(", ")
+}
+
+/** White or near-black, whichever stands out more against [fill]: for a hit marked on a ship. */
+private fun markOn(fill: Color): Color {
+    val l = fill.luminance()
+    return if (1.05f / (l + 0.05f) >= (l + 0.05f) / 0.0637f) Color.White else Color(0xFF1F1F1F)
 }
 
 @Composable
 fun BattleshipsScreen(onBack: () -> Unit) {
     val haptics = rememberHaptics()
+    val say = rememberAnnouncer()
     val synth = rememberToneSynth()
     val guard = rememberGameGuard()
     var mode by rememberGameMode("battleships_mode")
@@ -163,7 +203,7 @@ fun BattleshipsScreen(onBack: () -> Unit) {
         notice = null
         setBoard(1 - player, next)
         lastShot = cell
-        lastResult = resultText(r, next.shipAt(cell).takeIf { it >= 0 }?.let { Fleet.NAMES[it] })
+        lastResult = resultText(r, next.shipAt(cell).takeIf { it >= 0 }?.let { "the ${Fleet.NAMES[it]}" })
         incomingResult = null
         incomingShot = -1
         feedback(r)
@@ -193,6 +233,44 @@ fun BattleshipsScreen(onBack: () -> Unit) {
             tally.record(2)
         } else {
             phaseName = Phase.Aim.name
+        }
+    }
+
+    // Placing by taps, as the hint says: a ship, then where its front goes, or the same ship again to turn it.
+    fun place(cell: Int) {
+        val hit = draftBoard.shipAt(cell)
+        val ships = draftBoard.ships
+        when {
+            hit >= 0 && hit == selected -> {
+                val turned = ships.toMutableList().also { it[hit] = ships[hit].rotated() }
+                if (Fleet.isValid(turned)) {
+                    draft = Board(turned).encode(); haptics.tick()
+                    say("${Fleet.NAMES[hit]} turned ${if (turned[hit].horizontal) "across" else "down"}")
+                } else {
+                    haptics.heavy(); say("No room to turn it")
+                }
+            }
+            hit >= 0 -> { selected = hit; haptics.tick(); say("${Fleet.NAMES[hit]} selected") }
+            selected >= 0 -> {
+                val moved = ships.toMutableList().also { it[selected] = ships[selected].movedTo(cell % GRID, cell / GRID) }
+                if (Fleet.isValid(moved)) {
+                    draft = Board(moved).encode(); haptics.tick()
+                    say("${Fleet.NAMES[selected]} moved to ${cellName(cell)}")
+                } else {
+                    haptics.heavy(); say("It doesn't fit there")
+                }
+            }
+        }
+    }
+
+    // What a double tap on a square of your fleet does while placing, as TalkBack offers it.
+    fun placeLabel(cell: Int): String? {
+        val hit = draftBoard.shipAt(cell)
+        return when {
+            hit >= 0 && hit == selected -> "Turn ${Fleet.NAMES[hit]}"
+            hit >= 0 -> "Select ${Fleet.NAMES[hit]}"
+            selected >= 0 -> "Move ${Fleet.NAMES[selected]} here"
+            else -> null
         }
     }
 
@@ -233,26 +311,18 @@ fun BattleshipsScreen(onBack: () -> Unit) {
                     Grid(
                         board = draftBoard,
                         showShips = true,
+                        label = "Your fleet",
+                        whose = "your ",
                         selected = selected,
-                        onTap = { cell ->
-                            val hit = draftBoard.shipAt(cell)
-                            val ships = draftBoard.ships
-                            when {
-                                hit >= 0 && hit == selected -> {
-                                    val turned = ships.toMutableList().also { it[hit] = ships[hit].rotated() }
-                                    if (Fleet.isValid(turned)) { draft = Board(turned).encode(); haptics.tick() } else haptics.heavy()
-                                }
-                                hit >= 0 -> { selected = hit; haptics.tick() }
-                                selected >= 0 -> {
-                                    val moved = ships.toMutableList().also { it[selected] = ships[selected].movedTo(cell % GRID, cell / GRID) }
-                                    if (Fleet.isValid(moved)) { draft = Board(moved).encode(); haptics.tick() } else haptics.heavy()
-                                }
-                            }
-                        },
+                        clickLabel = ::placeLabel,
+                        onTap = ::place,
                         modifier = column,
                     )
                     Spacer(Modifier.height(16.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                         OutlinedButton(onClick = { draft = Board(Fleet.random()).encode(); selected = -1 }) {
                             Icon(Icons.Filled.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.size(8.dp))
@@ -314,18 +384,32 @@ fun BattleshipsScreen(onBack: () -> Unit) {
                     Grid(
                         board = enemy,
                         showShips = phase == Phase.Over,
+                        label = "Enemy waters",
                         lastShot = lastShot,
+                        clickLabel = { if (enemy.isShot(it)) null else "Fire" },
                         onTap = if (phase == Phase.Aim) ::fire else null,
                         modifier = column,
                     )
                     Spacer(Modifier.height(8.dp))
+                    // TalkBack also hears where each shot landed, which the board shows but the line doesn't say.
+                    val spoken = listOfNotNull(
+                        lastResult?.takeIf { it.isNotEmpty() && lastShot >= 0 }?.let {
+                            "${if (vsCpu) "You" else name(player)} fired at ${cellName(lastShot)}: $it"
+                        },
+                        incomingResult?.takeIf { it.isNotEmpty() && incomingShot >= 0 }?.let {
+                            "${if (vsCpu) "The computer" else name(1 - player)} fired at ${cellName(incomingShot)}: $it"
+                        },
+                    ).joinToString(". ")
                     Text(
                         notice ?: listOfNotNull(
                             lastResult?.takeIf { it.isNotEmpty() }?.let { if (vsCpu) "You: $it" else it },
                             incomingResult?.takeIf { it.isNotEmpty() }?.let { if (vsCpu) "Computer: $it" else "${name(1 - player)}: $it" },
                         ).joinToString("   ·   ").ifEmpty { if (phase == Phase.Aim) "Tap a square to fire" else " " },
                         style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        modifier = Modifier.semantics {
+                            liveRegion = LiveRegionMode.Polite
+                            if (notice == null && spoken.isNotEmpty()) contentDescription = spoken
+                        },
                     )
                     Spacer(Modifier.height(8.dp))
                     when (phase) {
@@ -339,7 +423,11 @@ fun BattleshipsScreen(onBack: () -> Unit) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(4.dp))
-                    Grid(board = own, showShips = true, lastShot = if (phase == Phase.Over) -1 else incomingShot, onTap = null, modifier = Modifier.widthIn(max = 240.dp).fillMaxWidth(0.6f))
+                    Grid(
+                        board = own, showShips = true, label = "Your fleet", whose = "your ",
+                        lastShot = if (phase == Phase.Over) -1 else incomingShot, onTap = null,
+                        modifier = Modifier.widthIn(max = 240.dp).fillMaxWidth(0.6f),
+                    )
                 }
             }
         }
@@ -357,20 +445,31 @@ private fun FleetStatus(board: Board, modifier: Modifier) {
             Text(
                 "${Fleet.NAMES[i]} (${ship.length})",
                 style = MaterialTheme.typography.labelLarge,
-                color = if (sunk) HIT else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (sunk) HIT.ink() else MaterialTheme.colorScheme.onSurfaceVariant,
                 textDecoration = if (sunk) TextDecoration.LineThrough else null,
+                // The strike-through isn't read out, so it's said in words.
+                modifier = Modifier.semantics {
+                    contentDescription = if (sunk) "${Fleet.NAMES[i]}, sunk" else "${Fleet.NAMES[i]}, ${ship.length} squares"
+                },
             )
         }
     }
 }
 
+/**
+ * One player's grid. [label] names it for TalkBack ("Enemy waters"), which finds each square as its own item; a square
+ * can be chosen when [onTap] is set and [clickLabel] gives it an action ("Fire"). [whose] goes before a ship's name.
+ */
 @Composable
 private fun Grid(
     board: Board,
     showShips: Boolean,
+    label: String,
     modifier: Modifier,
     selected: Int = -1,
     lastShot: Int = -1,
+    whose: String = "",
+    clickLabel: (Int) -> String? = { null },
     onTap: ((Int) -> Unit)?,
 ) {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.3f
@@ -379,55 +478,85 @@ private fun Grid(
     val shipColor = if (dark) Color(0xFF90A4AE) else Color(0xFF607D8B)
     val miss = if (dark) Color(0xFFB0C4D4) else Color(0xFF5B7A93)
     val accent = GoogleColors.Blue
-    Canvas(
+
+    var side by remember { mutableIntStateOf(0) }
+    val targets = if (side == 0) emptyList() else List(GRID * GRID) { cell ->
+        val c = side / GRID.toFloat()
+        val action = if (onTap != null) clickLabel(cell) else null
+        val ship = board.shipAt(cell)
+        BoardTarget(
+            key = cell,
+            rect = Rect(Offset(cell % GRID * c, cell / GRID * c), Size(c, c)),
+            description = cellName(cell),
+            state = cellState(board, cell, showShips, whose) + if (ship >= 0 && ship == selected) ", selected" else "",
+            clickLabel = action,
+            onClick = if (action != null && onTap != null) ({ onTap(cell) }) else null,
+            // Your own fleet during play is only there to be read; while placing, its squares can be chosen.
+            button = onTap != null,
+        )
+    }
+
+    Box(
         modifier
             .aspectRatio(1f)
+            .onSizeChanged { side = it.width }
             .semantics {
-                contentDescription = "Grid: ${board.shots.count { board.isHit(it) }} hits, ${board.shots.count { !board.isHit(it) }} misses"
-            }
-            .then(
-                if (onTap == null) Modifier else Modifier.pointerInput(board) {
-                    detectTapGestures { p ->
-                        val cell = size.width / GRID.toFloat()
-                        val x = (p.x / cell).toInt().coerceIn(0, GRID - 1)
-                        val y = (p.y / cell).toInt().coerceIn(0, GRID - 1)
-                        onTap(cellOf(x, y))
-                    }
-                },
-            ),
+                contentDescription = "$label: ${board.shots.count { board.isHit(it) }} hits, ${board.shots.count { !board.isHit(it) }} misses"
+            },
     ) {
-        val c = size.width / GRID
-        drawRoundRect(water, cornerRadius = CornerRadius(c * 0.4f))
-        for (i in 1 until GRID) {
-            drawLine(gridLine, Offset(i * c, 0f), Offset(i * c, size.height), strokeWidth = 1.dp.toPx())
-            drawLine(gridLine, Offset(0f, i * c), Offset(size.width, i * c), strokeWidth = 1.dp.toPx())
-        }
-        board.ships.forEachIndexed { i, ship ->
-            val sunk = board.isSunk(i)
-            if (!showShips && !sunk) return@forEachIndexed
-            val w = if (ship.horizontal) ship.length * c else c
-            val h = if (ship.horizontal) c else ship.length * c
-            val inset = c * 0.14f
-            val tl = Offset(ship.x * c + inset, ship.y * c + inset)
-            val sz = Size(w - 2 * inset, h - 2 * inset)
-            val color = when {
-                i == selected -> accent
-                sunk && !showShips -> HIT.copy(alpha = 0.35f)
-                else -> shipColor
+        Canvas(
+            Modifier
+                .fillMaxSize()
+                .then(
+                    if (onTap == null) Modifier else Modifier.pointerInput(board) {
+                        detectTapGestures { p ->
+                            val cell = size.width / GRID.toFloat()
+                            val x = (p.x / cell).toInt().coerceIn(0, GRID - 1)
+                            val y = (p.y / cell).toInt().coerceIn(0, GRID - 1)
+                            onTap(cellOf(x, y))
+                        }
+                    },
+                ),
+        ) {
+            val c = size.width / GRID
+            drawRoundRect(water, cornerRadius = CornerRadius(c * 0.4f))
+            for (i in 1 until GRID) {
+                drawLine(gridLine, Offset(i * c, 0f), Offset(i * c, size.height), strokeWidth = 1.dp.toPx())
+                drawLine(gridLine, Offset(0f, i * c), Offset(size.width, i * c), strokeWidth = 1.dp.toPx())
             }
-            drawRoundRect(color, tl, sz, CornerRadius(c * 0.36f))
-            if (sunk) drawRoundRect(HIT, tl, sz, CornerRadius(c * 0.36f), style = Stroke(2.dp.toPx()))
-        }
-        for (cell in board.shots) {
-            val centre = Offset((cell % GRID + 0.5f) * c, (cell / GRID + 0.5f) * c)
-            if (board.isHit(cell)) {
-                val r = c * 0.26f
-                drawLine(HIT, centre - Offset(r, r), centre + Offset(r, r), strokeWidth = c * 0.12f, cap = StrokeCap.Round)
-                drawLine(HIT, centre + Offset(-r, r), centre + Offset(r, -r), strokeWidth = c * 0.12f, cap = StrokeCap.Round)
-            } else {
-                drawCircle(miss, c * 0.12f, centre)
+            // The colour each ship is drawn in over the water, or null when it's hidden.
+            val fills = arrayOfNulls<Color>(board.ships.size)
+            board.ships.forEachIndexed { i, ship ->
+                val sunk = board.isSunk(i)
+                if (!showShips && !sunk) return@forEachIndexed
+                val w = if (ship.horizontal) ship.length * c else c
+                val h = if (ship.horizontal) c else ship.length * c
+                val inset = c * 0.14f
+                val tl = Offset(ship.x * c + inset, ship.y * c + inset)
+                val sz = Size(w - 2 * inset, h - 2 * inset)
+                val color = when {
+                    i == selected -> accent
+                    sunk && !showShips -> HIT.copy(alpha = 0.35f)
+                    else -> shipColor
+                }
+                fills[i] = color.compositeOver(water)
+                drawRoundRect(color, tl, sz, CornerRadius(c * 0.36f))
+                if (sunk) drawRoundRect(HIT, tl, sz, CornerRadius(c * 0.36f), style = Stroke(2.dp.toPx()))
             }
-            if (cell == lastShot) drawCircle(accent, c * 0.42f, centre, style = Stroke(2.dp.toPx()))
+            for (cell in board.shots) {
+                val centre = Offset((cell % GRID + 0.5f) * c, (cell / GRID + 0.5f) * c)
+                if (board.isHit(cell)) {
+                    // Red on the water, but red barely shows on a ship, so there it's white or near-black.
+                    val mark = fills[board.shipAt(cell)]?.let(::markOn) ?: HIT
+                    val r = c * 0.26f
+                    drawLine(mark, centre - Offset(r, r), centre + Offset(r, r), strokeWidth = c * 0.12f, cap = StrokeCap.Round)
+                    drawLine(mark, centre + Offset(-r, r), centre + Offset(r, -r), strokeWidth = c * 0.12f, cap = StrokeCap.Round)
+                } else {
+                    drawCircle(miss, c * 0.12f, centre)
+                }
+                if (cell == lastShot) drawCircle(accent, c * 0.42f, centre, style = Stroke(2.dp.toPx()))
+            }
         }
+        BoardTargets(targets, Modifier.matchParentSize())
     }
 }

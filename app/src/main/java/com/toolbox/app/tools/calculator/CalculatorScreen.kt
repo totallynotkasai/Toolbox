@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material3.Icon
@@ -34,7 +35,9 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.toolbox.app.tools.calculator.CalculatorEngine.DIVIDE
 import com.toolbox.app.tools.calculator.CalculatorEngine.MINUS
@@ -142,31 +145,41 @@ private fun Display(expr: String, preview: String?, isError: Boolean, isAnswer: 
     Surface(modifier, shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainer) {
         Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.Bottom) {
             Spacer(Modifier.weight(1f))
-            // Shrinks as the sum gets longer, so most sums fit on one line.
+            // Shrinks as the sum gets longer, so most sums fit on one line, and further still at large font sizes.
             val size = when {
                 expr.length <= 9 -> 52.sp
                 expr.length <= 14 -> 40.sp
                 expr.length <= 20 -> 30.sp
                 else -> 24.sp
             }
+            // Short sums stay on one line rather than breaking a number in two; long ones wrap as they always have.
+            val lines = if (expr.length <= 14) 1 else 3
             Text(
                 expr.ifEmpty { "0" },
                 fontSize = size,
-                lineHeight = size * 1.15f,
+                lineHeight = 1.15.em,
                 fontWeight = FontWeight.Light,
                 textAlign = TextAlign.End,
                 color = if (expr.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                maxLines = lines,
+                softWrap = lines > 1,
+                autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = size),
                 // The answer after "=" is read out; the sum being typed isn't, as each key already says what it is.
                 modifier = Modifier.fillMaxWidth().semantics { if (isAnswer) liveRegion = LiveRegionMode.Polite },
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
+                val previewStyle = MaterialTheme.typography.headlineSmall
                 Text(
                     preview?.let { if (isError) it else "= $it" } ?: " ",
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = previewStyle,
                     color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.End,
                     maxLines = 1,
-                    modifier = Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = previewStyle.fontSize),
+                    // Only the error is read out: the running answer would otherwise be said after every key.
+                    modifier = Modifier.weight(1f).semantics { if (isError) liveRegion = LiveRegionMode.Polite },
                 )
                 IconButton(onClick = onBackspace, enabled = expr.isNotEmpty()) {
                     Icon(Icons.AutoMirrored.Filled.Backspace, contentDescription = "Delete")
@@ -203,7 +216,15 @@ private fun RowScope.Key(key: CalcKey, onKey: (CalcKey) -> Unit) {
         modifier = Modifier.weight(1f).fillMaxHeight().semantics { contentDescription = key.spoken },
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Text(key.label, color = fg, fontSize = 26.sp, fontWeight = FontWeight.Medium)
+            Text(
+                key.label,
+                color = fg,
+                fontSize = 26.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                softWrap = false,
+                autoSize = TextAutoSize.StepBased(minFontSize = 12.sp, maxFontSize = 26.sp),
+            )
         }
     }
 }

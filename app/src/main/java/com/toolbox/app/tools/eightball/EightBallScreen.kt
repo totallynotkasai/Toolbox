@@ -37,6 +37,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -205,10 +207,12 @@ fun EightBallScreen(onBack: () -> Unit) {
                         translationX = jiggleX.value * density
                         rotationZ = jiggleTilt.value
                     }
+                    .semantics { contentDescription = "Magic 8-ball" }
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
                         onClickLabel = "Ask the ball",
+                        role = Role.Button,
                     ) { ask(20f) },
                 contentAlignment = Alignment.Center,
             ) {

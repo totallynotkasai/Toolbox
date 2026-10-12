@@ -65,6 +65,7 @@ import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.Stat
+import com.toolbox.app.ui.common.StatRow
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.Vibes
 import com.toolbox.app.ui.common.rememberPcmStream
@@ -156,7 +157,7 @@ fun SwitchesScreen(onBack: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(40.dp)) {
+            StatRow(gap = 40.dp) {
                 Stat("Clicks", "$session")
                 Stat("All time", "$total")
             }
@@ -214,6 +215,8 @@ private fun ToggleSwitch(audio: SwitchAudio, vibes: Vibes, scrolls: () -> Boolea
         scope.launch { lever.animateTo(if (to) 1f else -1f, spring(dampingRatio = 0.45f, stiffness = 2500f)) }
     }
 
+    // Read here rather than in the semantics block, so a flip recomposes and TalkBack hears the new state.
+    val state = ToggleableState(on)
     Canvas(
         Modifier
             .fillMaxWidth()
@@ -221,7 +224,7 @@ private fun ToggleSwitch(audio: SwitchAudio, vibes: Vibes, scrolls: () -> Boolea
             .semantics {
                 contentDescription = "Toggle switch"
                 role = Role.Switch
-                toggleableState = ToggleableState(on)
+                toggleableState = state
                 onClick { flip(!on); true }
             }
             .pointerInput(Unit) {
@@ -320,6 +323,7 @@ private fun RockerSwitch(audio: SwitchAudio, vibes: Vibes, scrolls: () -> Boolea
         scope.launch { tilt.animateTo(if (on) 1f else 0f, spring(dampingRatio = 0.7f, stiffness = 2500f)) }
     }
 
+    val state = ToggleableState(on) // read in composition, as for the toggle
     Canvas(
         Modifier
             .fillMaxWidth()
@@ -327,7 +331,7 @@ private fun RockerSwitch(audio: SwitchAudio, vibes: Vibes, scrolls: () -> Boolea
             .semantics {
                 contentDescription = "Rocker switch"
                 role = Role.Switch
-                toggleableState = ToggleableState(on)
+                toggleableState = state
                 onClick { rock(); true }
             }
             .pointerInput(Unit) {
@@ -510,6 +514,7 @@ private fun ClickyPen(audio: SwitchAudio, vibes: Vibes, scrolls: () -> Boolean, 
         scope.launch { press.animateTo(0f, spring(dampingRatio = 0.5f, stiffness = 1500f)) }
     }
 
+    val out = extended // read in composition, as for the toggle
     Canvas(
         Modifier
             .fillMaxWidth()
@@ -517,8 +522,8 @@ private fun ClickyPen(audio: SwitchAudio, vibes: Vibes, scrolls: () -> Boolean, 
             .semantics {
                 contentDescription = "Clicky pen"
                 role = Role.Switch
-                stateDescription = if (extended) "Nib out" else "Nib in"
-                toggleableState = ToggleableState(extended)
+                stateDescription = if (out) "Nib out" else "Nib in"
+                toggleableState = ToggleableState(out)
                 onClick { click(); letGo(); true }
             }
             .pointerInput(Unit) {
@@ -627,13 +632,16 @@ private fun NotchedSlider(audio: SwitchAudio, vibes: Vibes, scrolls: () -> Boole
         }
     }
 
+    val notch = detent // read in composition, as for the toggle
     Canvas(
         Modifier
             .fillMaxWidth()
             .height(76.dp)
             .semantics {
                 contentDescription = "Notched slider"
-                progressBarRangeInfo = ProgressBarRangeInfo(detent.toFloat(), 0f..(DETENTS - 1f), steps = DETENTS - 2)
+                // Said instead of the percentage TalkBack would make of the range.
+                stateDescription = "Notch ${notch + 1} of $DETENTS"
+                progressBarRangeInfo = ProgressBarRangeInfo(notch.toFloat(), 0f..(DETENTS - 1f), steps = DETENTS - 2)
                 setProgress { value ->
                     val d = value.roundToInt().coerceIn(0, DETENTS - 1)
                     if (d != detent) {
@@ -678,14 +686,17 @@ private fun DrawScope.drawSlider(shown: Float, detent: Int, track: Color, marks:
     val th = 8.dp.toPx()
     drawRoundRect(track, Offset(x0, y - th / 2), Size(x1 - x0, th), CornerRadius(th / 2))
 
-    // Notches above and below the track; the ones already passed take the fill colour.
+    // Notches above and below the track; the ones already passed take the fill colour, and are bolder so they don't
+    // differ by colour alone.
     val gap = th / 2 + 6.dp.toPx()
     val len = 8.dp.toPx()
     for (i in 0 until DETENTS) {
         val x = x0 + (x1 - x0) * i / (DETENTS - 1f)
-        val col = if (i <= detent) fill else marks
-        drawLine(col, Offset(x, y - gap), Offset(x, y - gap - len), strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round)
-        drawLine(col, Offset(x, y + gap), Offset(x, y + gap + len), strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round)
+        val passed = i <= detent
+        val col = if (passed) fill else marks
+        val w = (if (passed) 3.dp else 2.dp).toPx()
+        drawLine(col, Offset(x, y - gap), Offset(x, y - gap - len), strokeWidth = w, cap = StrokeCap.Round)
+        drawLine(col, Offset(x, y + gap), Offset(x, y + gap + len), strokeWidth = w, cap = StrokeCap.Round)
     }
     val tx = x0 + (x1 - x0) * shown
     drawRoundRect(fill, Offset(x0, y - th / 2), Size(tx - x0 + th / 2, th), CornerRadius(th / 2))

@@ -76,6 +76,7 @@ fun ToolScaffold(
                         title,
                         style = style,
                         maxLines = 1,
+                        softWrap = false,
                         overflow = TextOverflow.Ellipsis,
                         autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = style.fontSize),
                         modifier = Modifier.semantics { heading() },

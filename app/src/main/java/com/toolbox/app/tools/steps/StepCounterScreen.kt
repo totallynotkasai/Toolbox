@@ -23,8 +23,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
@@ -40,6 +42,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -60,9 +63,11 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
@@ -70,15 +75,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleStartEffect
+import com.toolbox.app.ui.common.AnnounceOnStart
 import com.toolbox.app.ui.common.PermissionGate
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.common.rememberPref
 import com.toolbox.app.ui.common.rememberSensorListener
 import com.toolbox.app.ui.theme.GoogleColors
+import com.toolbox.app.ui.theme.ink
 import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.LocalDate
@@ -259,9 +267,11 @@ private fun StepRing(steps: Long, settings: StepSettings, onEditGoal: () -> Unit
     val goal = settings.goal.coerceAtLeast(1)
     val reached = steps >= goal
     val progress by animateFloatAsState((steps.toFloat() / goal).coerceIn(0f, 1f), tween(600), label = "progress")
-    val color by animateColorAsState(if (reached) GoogleColors.Green else GoogleColors.Blue, label = "ring")
+    val reachedColor = GoogleColors.Green.ink()
+    val color by animateColorAsState(if (reached) reachedColor else GoogleColors.Blue, label = "ring")
     val track = MaterialTheme.colorScheme.surfaceContainerHighest
     val metres = distanceMetres(steps, settings.strideCm)
+    AnnounceOnStart(reached, "Goal reached")
 
     Box(
         Modifier.widthIn(max = 280.dp).fillMaxWidth().height(280.dp)
@@ -275,14 +285,24 @@ private fun StepRing(steps: Long, settings: StepSettings, onEditGoal: () -> Unit
             drawArc(track, 0f, 360f, false, Offset(inset, inset), arcSize, style = Stroke(stroke))
             if (progress > 0f) drawArc(color, -90f, 360f * progress, false, Offset(inset, inset), arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
         }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // Kept inside the ring: at large font sizes the count shrinks rather than running over it.
+        Column(Modifier.widthIn(max = 190.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(Icons.AutoMirrored.Filled.DirectionsWalk, null, tint = color, modifier = Modifier.size(28.dp))
-            Text("%,d".format(steps), style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Medium)
+            Text(
+                "%,d".format(steps),
+                style = MaterialTheme.typography.displayMedium,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                softWrap = false,
+                autoSize = TextAutoSize.StepBased(minFontSize = 20.sp, maxFontSize = MaterialTheme.typography.displayMedium.fontSize),
+            )
             Text(
                 if (reached) "Goal reached!" else "of %,d".format(goal),
                 style = MaterialTheme.typography.titleMedium,
-                color = if (reached) GoogleColors.Green else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button, onClickLabel = "Change goal", onClick = onEditGoal)
+                color = if (reached) reachedColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.minimumInteractiveComponentSize().clip(RoundedCornerShape(8.dp))
+                    .clickable(role = Role.Button, onClickLabel = "Change goal", onClick = onEditGoal)
                     .padding(horizontal = 8.dp, vertical = 2.dp),
             )
         }
@@ -309,7 +329,7 @@ private fun SessionCard(steps: Long, sinceMillis: Long, settings: StepSettings, 
     ) {
         Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("This session", style = MaterialTheme.typography.titleSmall)
+                Text("This session", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
                 Text("%,d steps  ·  %s".format(steps, formatDistance(distanceMetres(steps, settings.strideCm), settings.miles)),
                     style = MaterialTheme.typography.titleLarge)
                 if (sinceMillis != 0L) {
@@ -336,14 +356,19 @@ private fun WeekCard(state: StepState, today: Long, goal: Int) {
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
     val track = MaterialTheme.colorScheme.surfaceContainerHighest
     val bar = GoogleColors.Blue
+    val reachedBar = GoogleColors.Green.ink()
+    val highlight = MaterialTheme.colorScheme.secondaryContainer
     val grid = MaterialTheme.colorScheme.outline
     val ink = MaterialTheme.colorScheme.onSurface
     val locale = LocalLocale.current.platformLocale
-    val letters = remember(today, measurer, labelColor, ink) {
+    // The day names keep one size: the band under the bars doesn't grow with the font size.
+    val unscaled = Density(LocalDensity.current.density)
+    val letters = remember(today, measurer, labelColor, ink, unscaled) {
         days.mapIndexed { i, d ->
             measurer.measure(
                 LocalDate.ofEpochDay(d).dayOfWeek.getDisplayName(DateTextStyle.SHORT, locale).take(3),
                 TextStyle(color = if (i == 6) ink else labelColor, fontSize = 11.sp, fontWeight = if (i == 6) FontWeight.Bold else FontWeight.Normal),
+                density = unscaled,
             )
         }
     }
@@ -354,7 +379,7 @@ private fun WeekCard(state: StepState, today: Long, goal: Int) {
     ) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Last 7 days", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Text("Last 7 days", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f).semantics { heading() })
                 if (finished.isNotEmpty()) {
                     Text("Avg %,d / day".format(finished.sum() / finished.size), style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -387,17 +412,18 @@ private fun WeekCard(state: StepState, today: Long, goal: Int) {
                 val barW = slot * 0.55f
                 fun y(v: Float) = chartH * (1f - v / maxValue)
 
+                // The chosen day sits on a tinted pill; every bar is drawn solid so it stands out from the card.
+                drawRoundRect(highlight, Offset(slot * sel + 2.dp.toPx(), 0f), Size(slot - 4.dp.toPx(), size.height),
+                    cornerRadius = CornerRadius(8.dp.toPx()))
                 totals.forEachIndexed { i, v ->
                     val x = slot * i + (slot - barW) / 2
                     val color = when {
                         v == null -> track
-                        v >= goal -> GoogleColors.Green
+                        v >= goal -> reachedBar
                         else -> bar
                     }
-                    val alpha = if (i == sel) 1f else 0.6f
                     val top = if (v == null || v == 0L) chartH - 3.dp.toPx() else y(v.toFloat()).coerceAtMost(chartH - 3.dp.toPx())
-                    drawRoundRect(color.copy(alpha = if (v == null) 1f else alpha), Offset(x, top), Size(barW, chartH - top),
-                        cornerRadius = CornerRadius(4.dp.toPx()))
+                    drawRoundRect(color, Offset(x, top), Size(barW, chartH - top), cornerRadius = CornerRadius(4.dp.toPx()))
                     val l = letters[i]
                     drawText(l, topLeft = Offset(slot * i + (slot - l.size.width) / 2, chartH + (labelH - l.size.height) / 2 + 2.dp.toPx()))
                 }
@@ -426,9 +452,13 @@ private fun SettingsDialog(initial: StepSettings, onDismiss: () -> Unit, onSave:
                 NumberField("Daily goal (steps)", goal, goalOk, "100 to 100,000") { goal = it }
                 NumberField("Stride length (cm)", stride, strideOk, "30 to 150 cm. About 40% of your height.") { stride = it }
                 NumberField("Weight (kg)", weight, weightOk, "20 to 300 kg, for the calorie estimate") { weight = it }
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // The whole row toggles, so TalkBack reads the label with the switch.
+                Row(
+                    Modifier.toggleable(value = miles, role = Role.Switch) { miles = it },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text("Show distance in miles", modifier = Modifier.weight(1f))
-                    Switch(checked = miles, onCheckedChange = { miles = it })
+                    Switch(checked = miles, onCheckedChange = null)
                 }
             }
         },

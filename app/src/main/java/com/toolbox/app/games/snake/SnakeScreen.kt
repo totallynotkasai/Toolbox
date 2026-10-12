@@ -5,12 +5,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -37,6 +39,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -44,13 +49,13 @@ import com.toolbox.app.ui.common.GameFooter
 import com.toolbox.app.ui.common.GameGuardDialog
 import com.toolbox.app.ui.common.GameOver
 import com.toolbox.app.ui.common.NewGameButton
-import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.accessibilityActions
 import com.toolbox.app.ui.common.rememberBestScore
 import com.toolbox.app.ui.common.rememberGameGuard
 import com.toolbox.app.ui.common.rememberGameLoop
 import com.toolbox.app.ui.common.rememberHaptics
-import com.toolbox.app.ui.theme.GoogleColors
+import com.toolbox.app.ui.common.rememberScreenReaderOn
 import kotlin.math.abs
 
 private val GameSaver = Saver<SnakeGame, IntArray>(save = { it.save() }, restore = { SnakeGame.restore(it) })
@@ -58,6 +63,7 @@ private val GameSaver = Saver<SnakeGame, IntArray>(save = { it.save() }, restore
 @Composable
 fun SnakeScreen(onBack: () -> Unit) {
     val haptics = rememberHaptics()
+    val screenReader = rememberScreenReaderOn()
     val guard = rememberGameGuard()
     var game by rememberSaveable(stateSaver = GameSaver) { mutableStateOf(SnakeGame()) }
     val (best, submit) = rememberBestScore("snake")
@@ -142,18 +148,41 @@ fun SnakeScreen(onBack: () -> Unit) {
                     )
                 },
         ) {
-        ToolBody(padding, scroll = false) { // a vertical swipe steers, so it mustn't scroll
-            Row(Modifier.widthIn(max = 480.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        // Not a ToolBody: a vertical swipe steers, so this mustn't scroll, and the board shrinks instead when large text
+        // leaves less room, so the footer is never pushed off the bottom.
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 24.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            FlowRow(Modifier.widthIn(max = 480.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Score ${game.score}", style = MaterialTheme.typography.titleLarge)
                 Text("Best $best", style = MaterialTheme.typography.titleLarge)
             }
             Spacer(Modifier.height(12.dp))
+            val playing = game.state == SnakeGame.State.Playing
             Box(
                 Modifier
+                    .weight(1f, fill = false)
                     .widthIn(max = 480.dp)
-                    .fillMaxWidth()
                     .aspectRatio(COLS / ROWS.toFloat())
-                    .clip(RoundedCornerShape(12.dp)),
+                    .clip(RoundedCornerShape(12.dp))
+                    .semantics {
+                        // Not a live region: it changes with every step.
+                        contentDescription = snakeBoardDescription(game)
+                        // Swipes can't be made with TalkBack on, so the turns are in its actions menu instead.
+                        if (playing) {
+                            customActions = accessibilityActions(
+                                "Go up" to { game = game.turn(Dir.Up) },
+                                "Go down" to { game = game.turn(Dir.Down) },
+                                "Go left" to { game = game.turn(Dir.Left) },
+                                "Go right" to { game = game.turn(Dir.Right) },
+                            )
+                        }
+                    },
                 contentAlignment = Alignment.Center,
             ) {
                 Board(game, light, dark)
@@ -175,7 +204,11 @@ fun SnakeScreen(onBack: () -> Unit) {
                     SnakeGame.State.Won -> GameOver("You filled the board!", scoreLine(game.score, best, newBest))
                     else -> null
                 },
-                turn = if (game.state == SnakeGame.State.Paused) "Paused" else "Swipe anywhere to steer",
+                turn = when {
+                    game.state == SnakeGame.State.Paused -> "Paused"
+                    screenReader -> "Use the actions menu to steer"
+                    else -> "Swipe anywhere to steer"
+                },
                 turnColor = null,
                 hint = "Edges wrap around",
                 onPlayAgain = ::play,
@@ -188,21 +221,29 @@ fun SnakeScreen(onBack: () -> Unit) {
 
 private fun scoreLine(score: Int, best: Int, newBest: Boolean) = if (newBest) "Score $score · New best!" else "Score $score · Best $best"
 
+/** The board as TalkBack reads it: "Snake, score 3, heading left". */
+internal fun snakeBoardDescription(game: SnakeGame): String =
+    "Snake, score ${game.score}, heading ${game.dir.name.lowercase()}"
+
+// Darker than Google red and blue, so the food and the snake stand out from the grass.
+private val FOOD = Color(0xFFC5221F)
+private val SNAKE = Color(0xFF174EA6)
+
 @Composable
 private fun Board(game: SnakeGame, light: Color, dark: Color) {
-    Canvas(Modifier.fillMaxWidth().aspectRatio(COLS / ROWS.toFloat())) {
+    Canvas(Modifier.fillMaxSize()) {
         val cw = size.width / COLS
         val ch = size.height / ROWS
         for (x in 0 until COLS) for (y in 0 until ROWS) {
             drawRect(if ((x + y) % 2 == 0) light else dark, Offset(x * cw, y * ch), Size(cw + 1, ch + 1))
         }
         if (game.state != SnakeGame.State.Won) {
-            drawCircle(GoogleColors.Red, cw * 0.42f, Offset(game.food.x * cw + cw / 2, game.food.y * ch + ch / 2))
+            drawCircle(FOOD, cw * 0.42f, Offset(game.food.x * cw + cw / 2, game.food.y * ch + ch / 2))
         }
         val n = game.body.size
         game.body.forEachIndexed { i, c ->
-            // Head is Google blue; the body fades slightly toward the tail.
-            val shade = GoogleColors.Blue.copy(alpha = 1f - 0.35f * i / n.coerceAtLeast(1))
+            // The body fades slightly toward the tail.
+            val shade = SNAKE.copy(alpha = 1f - 0.35f * i / n.coerceAtLeast(1))
             val inset = if (i == 0) 0f else cw * 0.06f
             drawRoundRect(
                 shade,

@@ -6,6 +6,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,6 +30,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -37,14 +42,43 @@ import com.toolbox.app.ui.common.GameOver
 import com.toolbox.app.ui.common.NewGameButton
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.accessibilityActions
+import com.toolbox.app.ui.common.rememberAnnouncer
 import com.toolbox.app.ui.common.rememberBestScore
 import com.toolbox.app.ui.common.rememberGameGuard
 import com.toolbox.app.ui.common.rememberHaptics
+import com.toolbox.app.ui.common.rememberScreenReaderOn
 import kotlin.math.abs
+
+/** The board as TalkBack reads it, row by row: "Row 1: 2, empty, 4, empty. Row 2: …". */
+internal fun boardSpoken(board: List<Int>): String =
+    (0 until N).joinToString(". ") { r ->
+        "Row ${r + 1}: " + (0 until N).joinToString(", ") { c -> board[r * N + c].let { if (it == 0) "empty" else "$it" } }
+    }
+
+/**
+ * What TalkBack says after a move from [before]: the biggest tile a merge made and the new [score] if it scored, then
+ * where the new tile came in. [slid] is the board after sliding and before the new tile, [next] after it.
+ */
+internal fun moveSpoken(before: List<Int>, slid: List<Int>, next: List<Int>, score: Int, gained: Int): String {
+    val parts = mutableListOf<String>()
+    if (gained > 0) {
+        // The biggest tile made is always one more of its value than before: a merge that used one up would have
+        // made a bigger one still.
+        val had = before.filter { it != 0 }.groupingBy { it }.eachCount()
+        slid.filter { it != 0 }.groupingBy { it }.eachCount().filter { (v, n) -> n > (had[v] ?: 0) }.keys.maxOrNull()
+            ?.let { parts += "Made $it" }
+        parts += "Score $score"
+    }
+    next.indices.firstOrNull { slid[it] == 0 && next[it] != 0 }?.let { parts += "New ${next[it]} in row ${it / N + 1}, column ${it % N + 1}" }
+    return parts.joinToString(". ")
+}
 
 @Composable
 fun Game2048Screen(onBack: () -> Unit) {
     val haptics = rememberHaptics()
+    val say = rememberAnnouncer()
+    val readerOn = rememberScreenReaderOn()
     val guard = rememberGameGuard()
     var board by rememberSaveable { mutableStateOf(newBoard()) }
     var score by rememberSaveable { mutableIntStateOf(0) }
@@ -62,9 +96,11 @@ fun Game2048Screen(onBack: () -> Unit) {
     // Called from a long-lived pointerInput, so read state fresh rather than via captured locals.
     fun swipe(m: Move) {
         if (!canMove(board)) return
-        val (next, gained) = play(board, m) ?: return
+        val before = board
+        val (next, gained) = play(before, m) ?: run { say("Nothing moves that way"); return }
         board = next
         score += gained
+        say(moveSpoken(before, move(before, m).first, next, score, gained))
         if (gained > 0) {
             haptics.tick()
             submit(score)
@@ -78,7 +114,7 @@ fun Game2048Screen(onBack: () -> Unit) {
         actions = { NewGameButton(onClick = { guard.run(!over && score > 0) { newGame() } }, enabled = score > 0 || over) },
     ) { padding ->
         ToolBody(padding) {
-            Row(Modifier.widthIn(max = 400.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            FlowRow(Modifier.widthIn(max = 400.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Score $score", style = MaterialTheme.typography.titleLarge)
                 Text("Best $best", style = MaterialTheme.typography.titleLarge)
             }
@@ -108,6 +144,16 @@ fun Game2048Screen(onBack: () -> Unit) {
                             },
                         )
                     }
+                    // TalkBack reads the whole board at once, and moves through its actions menu.
+                    .clearAndSetSemantics {
+                        contentDescription = boardSpoken(board)
+                        customActions = accessibilityActions(
+                            "Move up" to { swipe(Move.Up) },
+                            "Move down" to { swipe(Move.Down) },
+                            "Move left" to { swipe(Move.Left) },
+                            "Move right" to { swipe(Move.Right) },
+                        )
+                    }
                     .padding(8.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -126,7 +172,11 @@ fun Game2048Screen(onBack: () -> Unit) {
                     if (won) "You made 2048!" else "No more moves",
                     if (score > bestBefore) "Score $score · New best!" else "Score $score · Best $best",
                 ),
-                turn = if (won) "You made 2048! Keep going." else "Swipe to combine matching tiles",
+                turn = when {
+                    won -> "You made 2048! Keep going."
+                    readerOn -> "Use the actions menu to move tiles"
+                    else -> "Swipe to combine matching tiles"
+                },
                 turnColor = null,
                 onPlayAgain = ::newGame,
             )
@@ -147,14 +197,20 @@ private fun Tile(value: Int, modifier: Modifier) {
         if (value == 0) MaterialTheme.colorScheme.surfaceContainerHighest else TILE_COLORS[value] ?: Color(0xFF174EA6),
         label = "tile",
     )
-    val fg = if (value in setOf(2, 4, 8, 32, 128, 512)) Color(0xFF202124) else Color.White
+    // Dark numbers on the pale tiles and the yellow 16; white on the rest, which all reach 3:1 for large bold text.
+    val fg = if (value in setOf(2, 4, 8, 16, 32, 128, 512)) Color(0xFF202124) else Color.White
     Box(modifier.clip(MaterialTheme.shapes.small).background(bg), contentAlignment = Alignment.Center) {
         if (value != 0) {
+            val size = when { value < 100 -> 32.sp; value < 1000 -> 26.sp; else -> 20.sp }
+            // Large text grows the number only as far as the tile has room.
             Text(
                 "$value",
                 color = fg,
                 fontWeight = FontWeight.Bold,
-                fontSize = when { value < 100 -> 32.sp; value < 1000 -> 26.sp; else -> 20.sp },
+                maxLines = 1,
+                softWrap = false,
+                autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = size),
+                modifier = Modifier.padding(4.dp),
             )
         }
     }

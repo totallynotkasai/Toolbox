@@ -59,6 +59,7 @@ import kotlin.math.floor
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.random.Random
 
@@ -94,6 +95,8 @@ fun CoinScreen(onBack: () -> Unit) {
     // This visit's last result (true = heads) and how many times the coin turned over; null while it's moving.
     var result by rememberSaveable { mutableStateOf<Boolean?>(null) }
     var turns by rememberSaveable { mutableIntStateOf(0) }
+    // The face showing, for TalkBack. Both modes start on the face last thrown, as the drawing does.
+    var face by remember { mutableStateOf(stats.streakHeads != false) }
 
     // Quick: an animation that lands on a face picked up front. Both modes start on the face last thrown.
     val rotation = remember { Animatable(if (stats.streakHeads == false) 180f else 0f) }
@@ -114,6 +117,7 @@ fun CoinScreen(onBack: () -> Unit) {
         stats = stats.record(heads)
         result = heads
         turns = flips
+        face = heads
     }
 
     val loop = rememberGameLoop { dt ->
@@ -131,6 +135,7 @@ fun CoinScreen(onBack: () -> Unit) {
         }
         frame++
         if (physics.phase != CoinPhysics.Phase.Resting) return@rememberGameLoop true
+        face = physics.heads // also after being put down, which can turn it over
         if (thrown) land(physics.heads, physics.flips)
         flying = false
         false
@@ -227,7 +232,7 @@ fun CoinScreen(onBack: () -> Unit) {
             stage = { modifier ->
                 if (mode == TossMode.Quick) {
                     TossTable(
-                        description = "Coin. Tap to flip it",
+                        description = coinTableDescription(face.takeUnless { busy }),
                         tapLabel = "Flip the coin",
                         onSize = {},
                         onTap = ::flip,
@@ -236,6 +241,7 @@ fun CoinScreen(onBack: () -> Unit) {
                     ) { drawQuickCoin(art, rotation.value, lift.value, settle.value) }
                 } else {
                     CoinTable(
+                        description = coinTableDescription(face.takeUnless { busy }) + ". Swipe to toss, or pick it up and flick it",
                         physics = physics,
                         art = art,
                         frame = frame,
@@ -276,7 +282,7 @@ fun CoinScreen(onBack: () -> Unit) {
                     else -> "Up flips it high, sideways sends it rolling. Or pick the coin up and flick it"
                 },
                 style = MaterialTheme.typography.bodyMedium,
-                lines = 2,
+                lines = hintLines(LocalDensity.current.fontScale),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(12.dp))
@@ -292,6 +298,19 @@ fun CoinScreen(onBack: () -> Unit) {
         }
     }
 }
+
+/** What TalkBack says for the coin's table: the face showing, or just "Coin" while it's moving ([heads] null). */
+internal fun coinTableDescription(heads: Boolean?): String = when (heads) {
+    null -> "Coin"
+    true -> "Coin, heads showing"
+    false -> "Coin, tails showing"
+}
+
+/**
+ * How many lines to keep for a hint under the table. Two fit the longest at normal sizes; larger text takes about
+ * that many more, or the hint would be cut off.
+ */
+internal fun hintLines(fontScale: Float): Int = (2 * fontScale).roundToInt().coerceAtLeast(2)
 
 /** Whether Quick's coin, turned [deg] about its flip axis, shows heads. Each 180° is one face change. */
 private fun quickHeads(deg: Float) = floor((deg + 90f) / 180f).toInt() % 2 == 0
@@ -346,6 +365,7 @@ private class TableView(size: IntSize, density: Density) {
 /** Throw's table: the physics coin, which can be swiped, tapped, or picked up, dragged and flicked. */
 @Composable
 private fun CoinTable(
+    description: String,
     physics: CoinPhysics,
     art: CoinArt,
     frame: Long,
@@ -359,7 +379,7 @@ private fun CoinTable(
     var view by remember { mutableStateOf<TableView?>(null) }
     var holdFrom by remember { mutableStateOf(Vec3.Zero) } // where the coin was when it was picked up
     TossTable(
-        description = "Coin. Swipe to toss, or pick it up and flick it",
+        description = description,
         tapLabel = "Toss the coin",
         onSize = {
             val v = TableView(it, density)

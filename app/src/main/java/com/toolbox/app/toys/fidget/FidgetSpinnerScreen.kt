@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -39,13 +40,19 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker1D
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.Stat
+import com.toolbox.app.ui.common.StatRow
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.accessibilityActions
 import com.toolbox.app.ui.common.rememberBestScore
 import com.toolbox.app.ui.common.rememberGameLoop
 import com.toolbox.app.ui.common.rememberPcmStream
@@ -66,6 +73,7 @@ private const val STOP_BELOW = 4f        // deg/s
 private const val SPIN_CEILING = MAX_SPEED * 1.05f // flicks approach this asymptotically
 private const val BRAKE_SECONDS = 0.25f  // a finger resting on it stops it in about this long
 private const val MIN_BRAKE = 200f       // deg/s², so a slow spin still stops promptly
+private const val STRONG_FLICK = 4000f   // deg/s, the flick TalkBack's Spin gives
 
 // The shape repeats every 120°, so once it turns more than a few tens of degrees a frame the eye can't follow it
 // (it seems to stop, or turn backwards). From BLUR_FROM degrees a frame it fades into a smeared disc, gone
@@ -108,6 +116,7 @@ private class Hand {
     var dragging = false
     var momentum = 0f // the spin when the finger landed, so a same-way flick adds to it
     var brake = 0f
+    var stopping = false // braking for TalkBack's Stop, as a resting finger would, until it has stopped
 }
 
 @Composable
@@ -129,9 +138,11 @@ fun FidgetSpinnerScreen(onBack: () -> Unit) {
     // once the spinner has stopped and nothing is touching it.
     val loop = rememberGameLoop { dt ->
         if (!hand.dragging && omega != 0f) {
-            omega = spinDown(omega, dt, if (hand.touching) hand.brake else 0f)
+            val braking = hand.touching || hand.stopping
+            omega = spinDown(omega, dt, if (braking) hand.brake else 0f)
             spinSeconds += dt
-            if (omega == 0f && !hand.touching) lastSpinSeconds = spinSeconds
+            if (omega == 0f && !braking) lastSpinSeconds = spinSeconds
+            if (omega == 0f) hand.stopping = false
         }
         val step = omega * dt
         if (dt > 0f) {
@@ -144,14 +155,59 @@ fun FidgetSpinnerScreen(onBack: () -> Unit) {
         omega != 0f || hand.touching || blur > 0f
     }
 
+    // A flick letting go at [fling] deg/s: adds to a same-way spin, or starts a new one.
+    fun release(fling: Float) {
+        val momentum = hand.momentum
+        omega = when {
+            abs(fling) < 30f -> 0f
+            sign(fling) == sign(momentum) -> sign(fling) * addSpin(abs(momentum), abs(fling))
+            else -> sign(fling) * addSpin(0f, abs(fling))
+        }
+        hand.momentum = 0f
+        hand.stopping = false
+        if (omega != 0f) {
+            audio.flick(abs(omega) / MAX_SPEED)
+            spinSeconds = 0f
+            hasSpun = true
+            vibes.click(0.6f)
+            submitRpm((abs(omega) / 6f).toInt())
+        }
+        loop.wake()
+    }
+
+    // TalkBack's Spin: a strong flick the way it's already going (clockwise from rest).
+    fun spin() {
+        hand.momentum = omega
+        release(if (omega < 0f) -STRONG_FLICK else STRONG_FLICK)
+    }
+
+    // TalkBack's Stop: brakes it as a finger resting on it would.
+    fun stop() {
+        if (omega == 0f) return
+        hand.brake = brakeFor(omega)
+        hand.stopping = true
+        if (abs(omega) > STOP_BELOW) {
+            audio.grab(abs(omega) / MAX_SPEED)
+            vibes.tick(0.4f)
+        }
+        loop.wake()
+    }
+
+    // Only whether it's turning, not how fast, so a spin doesn't recompose the screen each frame.
+    val spinning by remember { derivedStateOf { omega != 0f } }
     val bodyColor = GoogleColors.all[colorIndex]
 
     ToolScaffold(title = "Fidget Spinner", onBack = onBack) { padding ->
         ToolBody(padding) {
-            Row(horizontalArrangement = Arrangement.spacedBy(32.dp)) {
+            StatRow {
                 Rpm { omega }
                 Stat("Best", "$bestRpm")
-                Stat("Last spin", if (lastSpinSeconds > 0f) "%.1fs".format(lastSpinSeconds) else "–", widest = "00.0s")
+                Stat(
+                    "Last spin",
+                    if (lastSpinSeconds > 0f) "%.1fs".format(lastSpinSeconds) else "–",
+                    widest = "00.0s",
+                    spoken = if (lastSpinSeconds > 0f) "%.1f seconds".format(lastSpinSeconds) else "none",
+                )
             }
             Spacer(Modifier.height(16.dp))
             Box(
@@ -159,7 +215,12 @@ fun FidgetSpinnerScreen(onBack: () -> Unit) {
                     .widthIn(max = 380.dp)
                     .fillMaxWidth()
                     .aspectRatio(1f)
-                    .semantics { contentDescription = "Fidget spinner. Swipe across it to spin it." }
+                    .semantics {
+                        contentDescription = "Fidget spinner"
+                        stateDescription = if (spinning) "Spinning" else "Still"
+                        onClick(label = "Spin") { spin(); true }
+                        if (spinning) customActions = accessibilityActions("Stop" to { stop() })
+                    }
                     .pointerInput(Unit) {
                         // A finger landing on it brakes it straight away, without waiting to see if it's a drag.
                         awaitEachGesture {
@@ -204,22 +265,7 @@ fun FidgetSpinnerScreen(onBack: () -> Unit) {
                             },
                             onDragEnd = {
                                 hand.dragging = false
-                                val fling = tracker.calculateVelocity() * 1.4f
-                                val momentum = hand.momentum
-                                omega = when {
-                                    abs(fling) < 30f -> 0f
-                                    sign(fling) == sign(momentum) -> sign(fling) * addSpin(abs(momentum), abs(fling))
-                                    else -> sign(fling) * addSpin(0f, abs(fling))
-                                }
-                                hand.momentum = 0f
-                                if (omega != 0f) {
-                                    audio.flick(abs(omega) / MAX_SPEED)
-                                    spinSeconds = 0f
-                                    hasSpun = true
-                                    vibes.click(0.6f)
-                                    submitRpm((abs(omega) / 6f).toInt())
-                                }
-                                loop.wake()
+                                release(tracker.calculateVelocity() * 1.4f)
                             },
                             onDragCancel = { hand.dragging = false },
                         )
@@ -236,10 +282,11 @@ fun FidgetSpinnerScreen(onBack: () -> Unit) {
                 "Swipe up or down on the spinner — faster swipes spin it faster",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.alpha(hintAlpha),
+                // Once faded out it isn't read either.
+                modifier = Modifier.alpha(hintAlpha).then(if (hasSpun) Modifier.clearAndSetSemantics {} else Modifier),
             )
             Spacer(Modifier.height(16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 GoogleColors.all.forEachIndexed { i, c ->
                     // A 36 dp swatch in a 48 dp touch target.
                     Box(
@@ -255,7 +302,12 @@ fun FidgetSpinnerScreen(onBack: () -> Unit) {
                                 .size(36.dp)
                                 .clip(CircleShape)
                                 .background(c)
-                                .then(if (i == colorIndex) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape) else Modifier),
+                                // A thin ring on every swatch, so the pale yellow one still shows against the page.
+                                .border(
+                                    if (i == colorIndex) 3.dp else 1.dp,
+                                    if (i == colorIndex) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline,
+                                    CircleShape,
+                                ),
                         )
                     }
                 }

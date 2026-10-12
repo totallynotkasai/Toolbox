@@ -36,9 +36,16 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.accessibilityActions
 import com.toolbox.app.ui.common.rememberGameLoop
 import com.toolbox.app.ui.common.rememberPcmStream
 import com.toolbox.app.ui.common.rememberVibes
@@ -55,6 +62,8 @@ import kotlin.math.sin
 private const val STROKE_GAIN = 0.42f // purr gained per cat-width stroked the right way
 private const val WRONG_WAY = 0.12f   // cat-widths of backwards stroke before it objects
 private const val IDLE_FRAME_GAP_MS = 25L // left alone, about 30 frames a second
+private const val AUTO_STROKE = 0.6f       // cat-widths, head to tail, of a stroke done through TalkBack
+private const val AUTO_STROKE_SPEED = 1.2f // cat-widths a second, an unhurried hand
 
 /**
  * How the cat feels. Distances are in fractions of the cat's drawn width; positive dx runs head → tail.
@@ -111,6 +120,14 @@ internal fun purrEnvelope(phase: Float): Float {
 internal fun purrVibration(purr: Float, envelope: Float): Float =
     if (purr < 0.03f) 0f else purr.pow(0.8f) * envelope * 0.85f
 
+/** How the cat seems, for TalkBack: in broad steps, so it isn't re-read as the purr fades by the frame. */
+internal fun catMoodState(purr: Float, grumble: Float): String = when {
+    grumble > 0.3f -> "Grumpy"
+    purr > 0.6f -> "Purring loudly"
+    purr >= 0.05f -> "Purring"
+    else -> "Calm"
+}
+
 /** Animation clocks that don't need to trigger recomposition on their own. */
 private class CatAnim {
     var breath = 0f // 0..1 phase
@@ -118,6 +135,7 @@ private class CatAnim {
     var chirp = 0f  // 1 on a head tap, fading to 0
     var brush = 0f  // 0..1 stroking speed, decays quickly
     var touching = false // a finger is on the cat
+    var autoStroke = 0f  // cat-widths still to go of a stroke asked for through TalkBack
 
     fun advance(dt: Float, mood: CatMood) {
         // Resting breaths are slow; a purring cat breathes every ~1.8 s.
@@ -128,7 +146,7 @@ private class CatAnim {
     }
 
     /** Being stroked, or still reacting to it: worth every display frame. */
-    fun lively(mood: CatMood) = touching || brush > 0.02f || chirp > 0f || mood.grumble > 0f
+    fun lively(mood: CatMood) = touching || autoStroke > 0f || brush > 0.02f || chirp > 0f || mood.grumble > 0f
 }
 
 // A warm ginger tabby.
@@ -149,6 +167,7 @@ fun CatScreen(onBack: () -> Unit) {
     val anim = remember { CatAnim() }
     var time by remember { mutableFloatStateOf(0f) }
     var hasStroked by rememberSaveable { mutableStateOf(false) }
+    var moodState by remember { mutableStateOf(catMoodState(0f, 0f)) }
     val hintAlpha by animateFloatAsState(if (hasStroked) 0f else 1f, label = "hint")
     val audio = rememberPcmStream { CatAudio() }
     val vibes = rememberVibes()
@@ -158,7 +177,17 @@ fun CatScreen(onBack: () -> Unit) {
     // second is plenty for that.
     val loop = rememberGameLoop { dt ->
         time += dt
+        if (anim.autoStroke > 0f) {
+            // A TalkBack stroke runs head to tail over a few frames, as a hand would.
+            val dx = min(anim.autoStroke, dt * AUTO_STROKE_SPEED)
+            anim.autoStroke -= dx
+            anim.brush = (anim.brush + dx * 3f).coerceAtMost(1f)
+            if (mood.grumble < 0.5f) hasStroked = true
+            mood.stroke(dx)
+        }
         mood.update(dt)
+        // Set every frame, but an unchanged value doesn't recompose: only a step to another mood does.
+        moodState = catMoodState(mood.purr, mood.grumble)
         anim.advance(dt, mood)
         audio.purr = mood.purr
         audio.breath = anim.breath
@@ -168,13 +197,32 @@ fun CatScreen(onBack: () -> Unit) {
         true
     }
 
+    fun chirp() {
+        audio.chirp()
+        anim.chirp = 1f
+        vibes.pattern(longArrayOf(0, 12, 55, 14), floatArrayOf(0f, 0.35f, 0f, 0.45f))
+        loop.wake()
+    }
+
     ToolScaffold(title = "Purring Cat", onBack = onBack) { padding ->
         ToolBody(padding) {
+            val catState = moodState // read here, not in the semantics block, so a new mood reaches TalkBack
             Box(
                 Modifier
                     .widthIn(max = 440.dp)
                     .fillMaxWidth()
                     .aspectRatio(1.25f)
+                    .semantics {
+                        contentDescription = "Cat"
+                        stateDescription = catState
+                        onClick(label = "Stroke") {
+                            mood.startStroke()
+                            anim.autoStroke = AUTO_STROKE
+                            loop.wake()
+                            true
+                        }
+                        customActions = accessibilityActions("Tap head" to { chirp() })
+                    }
                     .pointerInput(Unit) {
                         detectTapGestures(
                             onPress = {
@@ -187,11 +235,7 @@ fun CatScreen(onBack: () -> Unit) {
                             val u = size.width.toFloat()
                             val hx = pos.x / u - 0.26f
                             val hy = pos.y / u - 0.37f
-                            if (hx * hx + hy * hy < 0.17f * 0.17f) {
-                                audio.chirp()
-                                anim.chirp = 1f
-                                vibes.pattern(longArrayOf(0, 12, 55, 14), floatArrayOf(0f, 0.35f, 0f, 0.45f))
-                            }
+                            if (hx * hx + hy * hy < 0.17f * 0.17f) chirp()
                         }
                     }
                     .pointerInput(Unit) {
@@ -250,7 +294,8 @@ fun CatScreen(onBack: () -> Unit) {
             Text(
                 "Stroke from head to tail",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.alpha(hintAlpha),
+                // Once faded out it isn't read either.
+                modifier = Modifier.alpha(hintAlpha).then(if (hasStroked) Modifier.clearAndSetSemantics {} else Modifier),
             )
         }
     }

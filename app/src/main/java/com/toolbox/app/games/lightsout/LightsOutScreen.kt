@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -32,6 +33,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
@@ -57,6 +59,7 @@ import com.toolbox.app.ui.common.rememberBestScore
 import com.toolbox.app.ui.common.rememberGameGuard
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.theme.GoogleColors
+import com.toolbox.app.ui.theme.isLight
 
 private val LIGHT_CORE = Color(0xFFFFF4C2)
 
@@ -163,7 +166,11 @@ fun LightsOutScreen(onBack: () -> Unit) {
                 action = "New puzzle",
             )
             Spacer(Modifier.height(16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            // Wraps onto two lines at large font sizes.
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 FilledTonalButton(
                     onClick = {
                         hintCell = board.solution()?.firstOrNull() ?: -1
@@ -191,6 +198,8 @@ private fun Light(on: Boolean, hinted: Boolean, dimmed: Boolean, label: String, 
     val fade by animateFloatAsState(if (dimmed) 0.55f else 1f, tween(400), label = "fade")
     val off = MaterialTheme.colorScheme.surfaceContainerHighest
     val ring = MaterialTheme.colorScheme.primary
+    // On a light surface the yellow is barely brighter than an unlit cell, so a lit one also gets a dark amber rim.
+    val rim = if (MaterialTheme.colorScheme.isLight) GoogleColors.YellowInk else null
     val pulse = if (hinted) {
         rememberInfiniteTransition(label = "hint")
             .animateFloat(0f, 1f, infiniteRepeatable(tween(650), RepeatMode.Reverse), label = "pulse").value
@@ -204,8 +213,13 @@ private fun Light(on: Boolean, hinted: Boolean, dimmed: Boolean, label: String, 
                 scaleX = s; scaleY = s
                 alpha = fade
             }
-            .semantics { contentDescription = label; stateDescription = if (on) "On" else "Off" }
-            .clickable(onClickLabel = "Press", role = Role.Button, onClick = onClick)
+            .semantics {
+                contentDescription = label
+                // The hint is only shown by a ring, so it's said too.
+                stateDescription = (if (on) "On" else "Off") + if (hinted) ", suggested" else ""
+            }
+            // A solved board is dimmed and can't be pressed any more.
+            .clickable(enabled = !dimmed, onClickLabel = "Press", role = Role.Button, onClick = onClick)
             .drawBehind {
                 val corner = CornerRadius(size.minDimension * 0.2f)
                 drawRoundRect(off, cornerRadius = corner)
@@ -215,6 +229,17 @@ private fun Light(on: Boolean, hinted: Boolean, dimmed: Boolean, label: String, 
                         cornerRadius = corner,
                         alpha = glow,
                     )
+                    if (rim != null) {
+                        val w = 2.5.dp.toPx()
+                        drawRoundRect(
+                            rim,
+                            topLeft = Offset(w / 2, w / 2),
+                            size = Size(size.width - w, size.height - w),
+                            cornerRadius = corner,
+                            style = Stroke(w),
+                            alpha = glow,
+                        )
+                    }
                 }
                 if (hinted) {
                     val w = 3.dp.toPx()

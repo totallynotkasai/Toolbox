@@ -4,7 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
@@ -18,6 +18,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.Stat
+import com.toolbox.app.ui.common.StatRow
 import com.toolbox.app.ui.common.rememberPref
 
 /** [CoinStats] persisted under [key], so the counts carry on across visits. */
@@ -39,7 +40,7 @@ fun rememberCoinStats(key: String): MutableState<CoinStats> {
 @Composable
 fun CoinStatsPanel(stats: CoinStats, modifier: Modifier = Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(horizontalArrangement = Arrangement.spacedBy(40.dp)) {
+        StatRow(gap = 40.dp) {
             val shares = stats.percentages()
             Stat(shareLabel("Heads", shares?.first), "${stats.heads}")
             Stat(shareLabel("Tails", shares?.second), "${stats.tails}")
@@ -54,7 +55,7 @@ fun CoinStatsPanel(stats: CoinStats, modifier: Modifier = Modifier) {
         Row(
             Modifier
                 .padding(top = 8.dp)
-                .height(26.dp)
+                .heightIn(min = 26.dp) // grows for the placeholder text at large font sizes
                 .clearAndSetSemantics {
                     contentDescription = if (history.isEmpty()) "No results yet"
                     else "Last ${history.length}, oldest first: " + history.map { if (it == 'H') "heads" else "tails" }.joinToString()

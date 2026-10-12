@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -57,15 +58,18 @@ fun rememberAnnouncer(): (String) -> Unit {
 
 /**
  * Says [text] when [active] turns true and stays true for [settleMs], such as "Level" or "In tune". It isn't said
- * again within [quietMs] of the last time, so a reading flickering at the edge doesn't chatter.
+ * again within [quietMs] of the last time, so a reading flickering at the edge doesn't chatter, nor when the screen
+ * opens already true (a goal reached earlier in the day), so it doesn't talk over the screen's name.
  */
 @Composable
 fun AnnounceOnStart(active: Boolean, text: String, settleMs: Long = 600, quietMs: Long = 4000) {
     val say = rememberAnnouncer()
     val latest by rememberUpdatedState(text)
-    var lastSaid by remember { mutableStateOf(Long.MIN_VALUE / 2) }
+    var lastSaid by remember { mutableLongStateOf(Long.MIN_VALUE / 2) }
+    var wasOff by remember { mutableStateOf(!active) }
     LaunchedEffect(active) {
-        if (!active) return@LaunchedEffect
+        if (!active) wasOff = true
+        if (!active || !wasOff) return@LaunchedEffect
         delay(settleMs)
         val now = SystemClock.elapsedRealtime()
         if (now - lastSaid >= quietMs) {
@@ -81,7 +85,8 @@ fun accessibilityActions(vararg actions: Pair<String, () -> Unit>): List<CustomA
 
 /**
  * One part of a board drawn on a Canvas, as TalkBack sees it: [rect] is where it is, in pixels from the board's
- * top-left. [onClick] null means it can't be chosen now. [state] is read after the [description].
+ * top-left. [state] is read after the [description]. A [button] is something that can be chosen at some point in
+ * the game, and [onClick] null means it can't be chosen now; otherwise it's only there to be read, like a claimed box.
  */
 class BoardTarget(
     val key: Any,
@@ -90,6 +95,7 @@ class BoardTarget(
     val state: String? = null,
     val clickLabel: String? = null,
     val onClick: (() -> Unit)? = null,
+    val button: Boolean = true,
 )
 
 /**
@@ -106,9 +112,11 @@ fun BoardTargets(targets: List<BoardTarget>, modifier: Modifier = Modifier) {
                     Modifier.semantics {
                         contentDescription = t.description
                         t.state?.let { stateDescription = it }
-                        role = Role.Button
-                        val click = t.onClick
-                        if (click != null) onClick(label = t.clickLabel) { click(); true } else disabled()
+                        if (t.button) {
+                            role = Role.Button
+                            val click = t.onClick
+                            if (click != null) onClick(label = t.clickLabel) { click(); true } else disabled()
+                        }
                     },
                 )
             }

@@ -4,9 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +18,7 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -38,11 +37,18 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker1D
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.Feel
 import com.toolbox.app.ui.common.Stat
+import com.toolbox.app.ui.common.StatRow
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.accessibilityActions
 import com.toolbox.app.ui.common.fixed
 import com.toolbox.app.ui.common.polar
 import com.toolbox.app.ui.common.rememberGameLoop
@@ -79,6 +85,8 @@ private const val FAST_NOTCHES = 32f     // notches/s above which separate ticks
 private const val LIGHT_DEG = -40f       // where the light comes from, degrees clockwise from 12 o'clock
 private const val RIDGES = 90            // knurls round the skirt, 4° apart
 private const val SETTLED = 0.01f        // degrees: close enough to a detent to stop animating
+private const val FREE_STEP = 30f        // deg, one TalkBack turn in Free mode, which has no notches
+private const val SPIN_SPEED = 1440f     // deg/s, a TalkBack spin: a good flick, half the cap
 private val SkirtGap = Color(0xFF26292D)
 private val RidgeDark = Color(0xFF3A3E44)
 private val RidgeLit = Color(0xFFD2D5DA)
@@ -99,6 +107,12 @@ internal fun knurlContrast(degreesPerFrame: Float): Float =
 internal fun detentAfter(raw: Float, current: Int, spacing: Float, capture: Float): Int {
     val off = raw - current * spacing
     return if (abs(off) <= capture) current else (raw / spacing).roundToInt()
+}
+
+/** What TalkBack says of the knob at rest: its [notch] (null in Free mode) and where the pointer is, [angle] from 0. */
+internal fun dialStateText(notch: Int?, angle: Float): String {
+    val deg = ((angle % 360f + 360f) % 360f).roundToInt() % 360
+    return if (notch != null) "Notch $notch, $deg degrees" else "$deg degrees"
 }
 
 
@@ -199,6 +213,50 @@ fun DialScreen(onBack: () -> Unit) {
         vibes.click(0.6f)
     }
 
+    // A finger landing on a spinning knob stops it dead.
+    fun grab() {
+        if (omega == 0f) return
+        audio.grab(abs(omega) / MAX_FREE_SPEED)
+        vibes.tick(0.4f)
+        omega = 0f
+        raw = shown
+    }
+
+    // TalkBack's turn: one notch, clicking as a drag through it would; in Free mode a short turn with no click.
+    fun turn(step: Int) {
+        loop.wake()
+        val m = mode
+        if (m.notches > 0) {
+            detent += step
+            raw = detent * m.spacing
+            onNotch(m)
+        } else {
+            grab()
+            raw = shown + step * FREE_STEP
+        }
+    }
+
+    // TalkBack's spin: a firm flick in Free mode.
+    fun spin(step: Int) {
+        loop.wake()
+        raw = shown
+        omega = step * SPIN_SPEED
+        vibes.tick(0.25f)
+    }
+
+    // At rest it reads the notch and angle the knob is settling to; while it spins, just that it's spinning, so a
+    // value that changes by the frame isn't read out.
+    val dialState by remember {
+        derivedStateOf {
+            val m = currentMode
+            when {
+                omega != 0f -> "Spinning"
+                m.notches > 0 -> dialStateText(detent - (zero / m.spacing).roundToInt(), detent * m.spacing - zero)
+                else -> dialStateText(null, raw - zero)
+            }
+        }
+    }
+    val spinning by remember { derivedStateOf { omega != 0f } }
 
     val tickColor = MaterialTheme.colorScheme.onSurfaceVariant
     val accent = MaterialTheme.colorScheme.primary
@@ -211,7 +269,7 @@ fun DialScreen(onBack: () -> Unit) {
                         selected = m == mode,
                         onClick = { switchTo(m) },
                         shape = SegmentedButtonDefaults.itemShape(i, DialMode.entries.size),
-                    ) { Text(m.label, maxLines = 1) }
+                    ) { Text(m.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
             }
             Spacer(Modifier.height(20.dp))
@@ -226,12 +284,7 @@ fun DialScreen(onBack: () -> Unit) {
                         // A finger landing on a spinning knob stops it dead, without waiting to see if it's a drag.
                         awaitEachGesture {
                             awaitFirstDown(requireUnconsumed = false)
-                            if (omega != 0f) {
-                                audio.grab(abs(omega) / MAX_FREE_SPEED)
-                                vibes.tick(0.4f)
-                                omega = 0f
-                                raw = shown
-                            }
+                            grab()
                         }
                     }
                     .pointerInput(Unit) {
@@ -287,6 +340,11 @@ fun DialScreen(onBack: () -> Unit) {
                 contentAlignment = Alignment.Center,
             ) {
                 Canvas(Modifier.fillMaxSize()) { drawDial(shown, mode, tickColor, accent, contrast) }
+                DialSemantics(
+                    mode, { dialState }, { spinning },
+                    onTurn = { turn(it) }, onSpin = { spin(it) }, onStop = { grab() },
+                    modifier = Modifier.matchParentSize(),
+                )
             }
             Spacer(Modifier.height(12.dp))
             FilledTonalButton(onClick = { reset() }) { Text("Reset to 0") }
@@ -307,7 +365,7 @@ fun DialScreen(onBack: () -> Unit) {
 /** The readings, in their own scope so a turning knob recomposes just these numbers, not the whole screen. */
 @Composable
 private fun DialStats(mode: DialMode, detent: () -> Int, shown: () -> Float, speed: () -> Float, zero: () -> Float) {
-    Row(horizontalArrangement = Arrangement.spacedBy(32.dp)) {
+    StatRow {
         if (mode.notches > 0) {
             Stat("Notch", "${detent() - (zero() / mode.spacing).roundToInt()}", widest = "-000")
         } else {
@@ -315,9 +373,40 @@ private fun DialStats(mode: DialMode, detent: () -> Int, shown: () -> Float, spe
         }
         val turns = (shown() - zero()) / 360f
         Stat("Turns", fixed(turns, 2), widest = "-00.00")
-        val deg = ((shown() - zero()) % 360f + 360f) % 360f
-        Stat("Angle", "${deg.roundToInt() % 360}°", widest = "000°")
+        val deg = (((shown() - zero()) % 360f + 360f) % 360f).roundToInt() % 360
+        Stat("Angle", "$deg°", widest = "000°", spoken = "$deg degrees")
     }
+}
+
+/**
+ * The knob as TalkBack finds it, laid over the drawing: turns a notch at a time, and spins and stops in Free mode.
+ * In its own scope like [DialStats], so a new reading doesn't recompose the whole screen.
+ */
+@Composable
+private fun DialSemantics(
+    mode: DialMode,
+    state: () -> String,
+    spinning: () -> Boolean,
+    onTurn: (Int) -> Unit,
+    onSpin: (Int) -> Unit,
+    onStop: () -> Unit,
+    modifier: Modifier,
+) {
+    val said = state()
+    val actions = buildList {
+        addAll(accessibilityActions("Turn clockwise" to { onTurn(1) }, "Turn anticlockwise" to { onTurn(-1) }))
+        if (mode == DialMode.Free) {
+            addAll(accessibilityActions("Spin clockwise" to { onSpin(1) }, "Spin anticlockwise" to { onSpin(-1) }))
+            if (spinning()) addAll(accessibilityActions("Stop" to onStop))
+        }
+    }
+    Box(
+        modifier.semantics {
+            contentDescription = "Rotary dial"
+            stateDescription = said
+            customActions = actions
+        },
+    )
 }
 
 /**
@@ -339,18 +428,23 @@ private fun DrawScope.drawDial(angle: Float, mode: DialMode, tickColor: Color, a
             DialMode.Chunky -> true
             DialMode.Free -> i % 6 == 0
         }
+        // The lit notch is also bolder and longer, so it doesn't stand out by colour alone.
         val width = when {
             mode == DialMode.Chunky -> r * 0.035f
             major -> r * 0.018f
             else -> r * 0.01f
-        }
+        } * if (i == lit) 1.6f else 1f
         val color = when {
             i == lit -> accent
             mode == DialMode.Free -> tickColor.copy(alpha = if (major) 0.45f else 0.2f)
             major -> tickColor.copy(alpha = 0.9f)
             else -> tickColor.copy(alpha = 0.5f)
         }
-        val inner = r * if (major) 0.86f else 0.9f
+        val inner = r * when {
+            i == lit -> 0.82f
+            major -> 0.86f
+            else -> 0.9f
+        }
         drawLine(color, polar(c, inner, a), polar(c, r * 0.97f, a), strokeWidth = width, cap = StrokeCap.Round)
     }
 

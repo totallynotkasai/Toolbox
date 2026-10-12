@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material3.Button
@@ -45,16 +46,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.openAppSettings
+import com.toolbox.app.ui.common.rememberAnnouncer
 import com.toolbox.app.ui.common.rememberPermission
 import com.toolbox.app.ui.common.rememberPref
 import com.toolbox.app.ui.common.startFirst
@@ -120,19 +127,34 @@ private fun TimerPane() {
         val track = MaterialTheme.colorScheme.surfaceContainerHighest
         val arc = if (ringing) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
         val fraction = state.progress(now)
-        Canvas(Modifier.size(280.dp)) {
+        // Drawing only: the time in the middle says how much is left.
+        Canvas(Modifier.size(280.dp).clearAndSetSemantics {}) {
             val stroke = Stroke(12.dp.toPx(), cap = StrokeCap.Round)
             drawArc(track, 0f, 360f, false, style = stroke)
             drawArc(arc, -90f, 360f * fraction, false, style = stroke)
         }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // Inset from the ring, so the time shrinks to stay inside it at large font sizes.
+        Column(Modifier.padding(horizontal = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             if (ringing) {
-                Text("Time's up", style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.error)
+                val style = MaterialTheme.typography.displaySmall
+                Text(
+                    "Time's up",
+                    style = style,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 1,
+                    softWrap = false,
+                    autoSize = TextAutoSize.StepBased(minFontSize = 20.sp, maxFontSize = style.fontSize),
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
+                )
             } else {
+                val style = MaterialTheme.typography.displayMedium
                 Text(
                     formatClock(state.remaining(now) + 999),
-                    style = MaterialTheme.typography.displayMedium,
+                    style = style,
                     fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    softWrap = false,
+                    autoSize = TextAutoSize.StepBased(minFontSize = 20.sp, maxFontSize = style.fontSize),
                 )
             }
             val caption = when (state.phase) {
@@ -141,17 +163,31 @@ private fun TimerPane() {
                 else -> null
             }
             if (caption != null) {
-                Text(caption, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    caption,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
             }
         }
     }
     Spacer(Modifier.height(24.dp))
 
-    // Setting a time is for a stopped or paused timer; paused, the ± chips change the time left.
+    // Setting a time is for a stopped or paused timer; paused, the ± chips change the time left. The new time is said
+    // aloud, as the clock it changes isn't where TalkBack is.
+    val say = rememberAnnouncer()
+    fun sayTimeLeft() = say(spokenDuration(timer.state.remainingMs))
     val editable = state.phase == TimerPhase.Idle || state.phase == TimerPhase.Paused
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
         listOf(1, 3, 5, 10, 15).forEach { min ->
-            SuggestionChip(onClick = { timer.set(min * 60_000L) }, label = { Text("${min}m") }, enabled = editable)
+            SuggestionChip(
+                onClick = { timer.set(min * 60_000L); sayTimeLeft() },
+                label = { Text("${min}m") },
+                enabled = editable,
+                // "1m" would be read as a metre.
+                modifier = Modifier.semantics { contentDescription = spokenDuration(min * 60_000L) },
+            )
         }
     }
     Spacer(Modifier.height(8.dp))
@@ -164,7 +200,7 @@ private fun TimerPane() {
             Triple(60_000L, "+1m", "Add 1 minute"),
         ).forEach { (d, label, spoken) ->
             SuggestionChip(
-                onClick = { timer.adjust(d) },
+                onClick = { timer.adjust(d); sayTimeLeft() },
                 label = { Text(label) },
                 enabled = editable,
                 modifier = Modifier.semantics { contentDescription = spoken },
@@ -233,6 +269,18 @@ private fun rememberTimerState(timer: TimerController): State<TimerState> {
 private fun ringTime(context: Context, endAt: Long): String = remember(endAt) {
     val wall = System.currentTimeMillis() + (endAt - TimerController.now())
     android.text.format.DateFormat.getTimeFormat(context).format(Date(wall))
+}
+
+/** A timer's time as TalkBack says it, such as "1 minute 30 seconds", rounded up to the second like the clock. */
+internal fun spokenDuration(ms: Long): String {
+    val total = (ms + 999) / 1000
+    val h = total / 3600; val m = (total / 60) % 60; val s = total % 60
+    fun part(n: Long, unit: String) = if (n == 1L) "1 $unit" else "$n ${unit}s"
+    return listOfNotNull(
+        part(h, "hour").takeIf { h > 0 },
+        part(m, "minute").takeIf { m > 0 },
+        part(s, "second").takeIf { s > 0 || total == 0L },
+    ).joinToString(" ")
 }
 
 private fun hasPermission(context: Context) = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||

@@ -3,9 +3,7 @@ package com.toolbox.app.toys.bubblewrap
 import android.os.SystemClock
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -42,14 +40,21 @@ import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.Stat
+import com.toolbox.app.ui.common.StatRow
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.rememberAnnouncer
 import com.toolbox.app.ui.common.rememberGameLoop
 import com.toolbox.app.ui.common.rememberPcmStream
 import com.toolbox.app.ui.common.rememberPref
 import com.toolbox.app.ui.common.rememberVibes
 import com.toolbox.app.ui.theme.GoogleColors
+import com.toolbox.app.ui.theme.isLight
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.max
@@ -93,6 +98,8 @@ fun BubbleWrapScreen(onBack: () -> Unit) {
     val density = LocalDensity.current
     val pitchPx = with(density) { BUBBLE_DP.dp.toPx() }
     val marginPx = with(density) { 6.dp.toPx() }
+    val say = rememberAnnouncer()
+    val light = MaterialTheme.colorScheme.isLight
 
     fun newSheet(rollIn: Boolean) {
         val grid = st.grid ?: return
@@ -111,8 +118,9 @@ fun BubbleWrapScreen(onBack: () -> Unit) {
         frame++
     }
 
-    fun resolve(sheet: BubbleSheet, i: Int) {
-        when (sheet.press(i)) {
+    fun resolve(sheet: BubbleSheet, i: Int): Press {
+        val press = sheet.press(i)
+        when (press) {
             Press.Pop -> {
                 audio.pop(Random.nextFloat())
                 vibes.click(0.5f + Random.nextFloat() * 0.3f)
@@ -126,6 +134,7 @@ fun BubbleWrapScreen(onBack: () -> Unit) {
             }
             Press.None -> Unit
         }
+        return press
     }
 
     // Frame loop: hold-to-pop timing, squish easing, pop bursts and the sheet change. It goes idle once every
@@ -155,13 +164,23 @@ fun BubbleWrapScreen(onBack: () -> Unit) {
         moving || st.holds.isNotEmpty() || st.nextSheetAt != 0L || st.slide < 1f
     }
 
+    // TalkBack's double tap presses the next whole bubble as a tap would, so a stubborn one squeaks first.
+    fun popNext() {
+        val sheet = st.sheet ?: return
+        if (st.slide < 1f) return
+        val i = (0 until sheet.count).firstOrNull { b -> !sheet.popped[b] && st.holds.values.none { it.bubble == b } } ?: return
+        if (resolve(sheet, i) == Press.Squeak) say("Squeak. That one needs another press")
+        loop.wake()
+    }
+
     ToolScaffold(title = "Bubble Wrap", onBack = onBack) { padding ->
         Column(
             Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(40.dp)) {
-                Stat("This sheet", "$sheetPops / $sheetSize", widest = "000 / 000")
+            val popState = "$sheetPops of $sheetSize popped"
+            StatRow(gap = 40.dp) {
+                Stat("This sheet", "$sheetPops / $sheetSize", widest = "000 / 000", spoken = popState)
                 Stat("Lifetime", "$total")
             }
             Spacer(Modifier.height(12.dp))
@@ -175,6 +194,11 @@ fun BubbleWrapScreen(onBack: () -> Unit) {
                     // outer bubbles would otherwise leave the toy.
                     .systemGestureExclusion { with(density) { edgeGuard(it, left = true) } }
                     .systemGestureExclusion { with(density) { edgeGuard(it, left = false) } }
+                    .semantics {
+                        contentDescription = "Bubble wrap"
+                        stateDescription = popState
+                        onClick(label = "Pop a bubble") { popNext(); true }
+                    }
                     .onSizeChanged { sz ->
                         val g = st.grid
                         val w = sz.width.toFloat()
@@ -219,8 +243,8 @@ fun BubbleWrapScreen(onBack: () -> Unit) {
                 val grid = st.grid ?: return@Canvas
                 val ease = 1f - (1f - st.slide).pow(3)
                 val w = size.width
-                st.old?.let { old -> translate(left = -w * ease) { drawSheet(old, grid) } }
-                st.sheet?.let { sheet -> translate(left = w * (1f - ease)) { drawSheet(sheet, grid) } }
+                st.old?.let { old -> translate(left = -w * ease) { drawSheet(old, grid, light) } }
+                st.sheet?.let { sheet -> translate(left = w * (1f - ease)) { drawSheet(sheet, grid, light) } }
             }
             Spacer(Modifier.height(12.dp))
             FilledTonalButton(onClick = { newSheet(rollIn = true); loop.wake() }) { Text("New sheet") }
@@ -237,18 +261,21 @@ private fun Density.edgeGuard(coords: LayoutCoordinates, left: Boolean): Rect {
     return if (left) Rect(0f, top, strip, h) else Rect(w - strip, top, w, h)
 }
 
-private fun DrawScope.drawSheet(sheet: BubbleSheet, grid: HexGrid) {
+private fun DrawScope.drawSheet(sheet: BubbleSheet, grid: HexGrid, light: Boolean) {
     val tint = GoogleColors.all[sheet.tint % GoogleColors.all.size]
+    // Rims and crinkles use the darker tone in light mode, so a pale yellow sheet's bubbles still stand out from the
+    // film, and a popped one still reads differently from a whole one.
+    val ink = GoogleColors.ink(tint, light)
     drawRect(tint.copy(alpha = 0.07f)) // the flat film between the bubbles
     val r = grid.pitch * 0.43f
     for (i in 0 until sheet.count) {
         val c = Offset(grid.x(i), grid.y(i))
-        if (sheet.popped[i]) drawPopped(c, r, tint, sheet, i) else drawBubble(c, r, tint, sheet.squish[i], sheet.softened[i])
+        if (sheet.popped[i]) drawPopped(c, r, tint, ink, sheet, i) else drawBubble(c, r, tint, ink, sheet.squish[i], sheet.softened[i])
     }
 }
 
 /** A glossy translucent dome; [squish] 0..1 flattens it (wider, dimmer highlight, a dimple in the middle). */
-private fun DrawScope.drawBubble(c: Offset, r: Float, tint: Color, squish: Float, softened: Boolean) {
+private fun DrawScope.drawBubble(c: Offset, r: Float, tint: Color, ink: Color, squish: Float, softened: Boolean) {
     val s = squish.coerceIn(0f, 1f)
     val rr = r * (1f + 0.08f * s)
     drawCircle(Color.Black.copy(alpha = 0.10f * (1f - 0.6f * s)), rr, c + Offset(r * 0.07f, r * 0.12f * (1f - 0.5f * s)))
@@ -262,14 +289,14 @@ private fun DrawScope.drawBubble(c: Offset, r: Float, tint: Color, squish: Float
         ),
         rr, c,
     )
-    drawCircle(tint.copy(alpha = 0.55f), rr, c, style = Stroke(r * 0.07f))
+    drawCircle(ink.copy(alpha = 0.8f), rr, c, style = Stroke(r * 0.07f))
     val hl = r * (0.34f - 0.18f * s)
     drawOval(Color.White.copy(alpha = 0.75f * (1f - 0.6f * s)), topLeft = c + Offset(-r * 0.55f, -r * 0.6f), size = Size(hl * 1.3f, hl))
     if (s > 0.01f) drawCircle(Color.Black.copy(alpha = 0.10f * s), rr * 0.55f, c + Offset(r * 0.05f, r * 0.08f))
     if (softened) {
         // A stubborn bubble that has been squashed once keeps a crease.
         drawArc(
-            tint.copy(alpha = 0.6f), 200f, 110f, false,
+            ink.copy(alpha = 0.7f), 200f, 110f, false,
             topLeft = c - Offset(r * 0.45f, r * 0.2f), size = Size(r * 0.9f, r * 0.6f),
             style = Stroke(r * 0.06f, cap = StrokeCap.Round),
         )
@@ -277,7 +304,7 @@ private fun DrawScope.drawBubble(c: Offset, r: Float, tint: Color, squish: Float
 }
 
 /** A popped bubble: flat, crinkled film, plus a quick burst ring just after the pop. */
-private fun DrawScope.drawPopped(c: Offset, r: Float, tint: Color, sheet: BubbleSheet, i: Int) {
+private fun DrawScope.drawPopped(c: Offset, r: Float, tint: Color, ink: Color, sheet: BubbleSheet, i: Int) {
     val age = sheet.popAge[i]
     if (age < POP_FLASH) {
         val k = (age / POP_FLASH).coerceIn(0f, 1f)
@@ -294,14 +321,14 @@ private fun DrawScope.drawPopped(c: Offset, r: Float, tint: Color, sheet: Bubble
     }
     path.close()
     drawPath(path, tint.copy(alpha = 0.12f))
-    drawPath(path, tint.copy(alpha = 0.4f), style = Stroke(r * 0.045f, join = StrokeJoin.Round))
+    drawPath(path, ink.copy(alpha = 0.6f), style = Stroke(r * 0.045f, join = StrokeJoin.Round))
     // A couple of creases across the collapsed film.
     for (k in intArrayOf(1, 5)) {
         val a = 2 * PI * k / CRINKLE + sheet.crinkle[base + k] * 0.4
         val rad = r * sheet.crinkle[base + k] * 0.85f
         val from = c - Offset(r * 0.15f * cos(a).toFloat(), r * 0.15f * sin(a).toFloat())
         drawLine(
-            tint.copy(alpha = 0.35f), from, Offset(c.x + rad * cos(a).toFloat(), c.y + rad * sin(a).toFloat()),
+            ink.copy(alpha = 0.5f), from, Offset(c.x + rad * cos(a).toFloat(), c.y + rad * sin(a).toFloat()),
             strokeWidth = r * 0.035f, cap = StrokeCap.Round,
         )
     }

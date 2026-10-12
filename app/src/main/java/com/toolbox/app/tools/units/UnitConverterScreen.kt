@@ -42,11 +42,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -55,13 +57,19 @@ import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLocale
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberHaptics
+import com.toolbox.app.ui.common.rememberAnnouncer
 import com.toolbox.app.ui.common.rememberPref
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val ALLOWED_INPUT = "0123456789.,-eE "
@@ -91,9 +99,21 @@ fun UnitConverterScreen(onBack: () -> Unit) {
     val bottomText = if (anchor == 1) anchorText else derivedText
     val fromValue = if (anchor == 0) anchorValue else anchorValue?.let { convert(it, to, from) }
 
+    // Typing in one field, or changing a unit, quietly changes the number in the other. TalkBack hears the new
+    // number once the changes stop for a second, rather than after every key.
+    val say = rememberAnnouncer()
+    var changes by remember { mutableIntStateOf(0) }
+    val result by rememberUpdatedState(derivedText.ifEmpty { null }?.let { "equals $it ${if (anchor == 0) to.name else from.name}" })
+    LaunchedEffect(changes) {
+        if (changes == 0) return@LaunchedEffect
+        delay(1000)
+        result?.let(say)
+    }
+
     fun edit(field: Int, text: String) {
         anchor = field
         anchorText = text.filter { it in ALLOWED_INPUT }.take(24)
+        changes++
     }
 
     fun selectCategory(c: UnitCategory) {
@@ -111,6 +131,7 @@ fun UnitConverterScreen(onBack: () -> Unit) {
         toId = from.id
         anchor = 0
         anchorText = keep
+        changes++
     }
 
     ToolScaffold(title = "Unit Converter", onBack = onBack) { padding ->
@@ -153,7 +174,7 @@ fun UnitConverterScreen(onBack: () -> Unit) {
                         text = topText,
                         isError = anchor == 0 && anchorText.isNotBlank() && anchorValue == null,
                         allowNegative = category == UnitCategory.Temperature,
-                        onUnit = { fromId = it.id },
+                        onUnit = { fromId = it.id; changes++ },
                         onText = { edit(0, it) },
                     )
                     FilledTonalIconButton(onClick = ::swap, modifier = Modifier.padding(vertical = 4.dp)) {
@@ -166,7 +187,7 @@ fun UnitConverterScreen(onBack: () -> Unit) {
                         text = bottomText,
                         isError = anchor == 1 && anchorText.isNotBlank() && anchorValue == null,
                         allowNegative = category == UnitCategory.Temperature,
-                        onUnit = { toId = it.id },
+                        onUnit = { toId = it.id; changes++ },
                         onText = { edit(1, it) },
                     )
                     Spacer(Modifier.height(12.dp))
@@ -202,7 +223,7 @@ fun UnitConverterScreen(onBack: () -> Unit) {
                         selected = to,
                         units = category.units,
                         decimal = decimal,
-                        onPick = { haptics.tick(); toId = it.id; anchor = 0; anchorText = topText },
+                        onPick = { haptics.tick(); toId = it.id; anchor = 0; anchorText = topText; changes++ },
                         modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
                     )
                 }
@@ -269,9 +290,10 @@ private fun ConversionSide(
                 trailingIcon = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (allowNegative) {
-                            TextButton(onClick = {
-                                onText(if (text.startsWith("-")) text.drop(1) else "-$text")
-                            }) { Text("±", style = MaterialTheme.typography.titleLarge) }
+                            TextButton(
+                                onClick = { onText(if (text.startsWith("-")) text.drop(1) else "-$text") },
+                                modifier = Modifier.semantics { contentDescription = "Change sign" },
+                            ) { Text("±", style = MaterialTheme.typography.titleLarge) }
                         }
                         IconButton(
                             enabled = text.isNotBlank() && !isError,
@@ -282,6 +304,7 @@ private fun ConversionSide(
                         ) { Icon(Icons.Filled.ContentCopy, contentDescription = "Copy value") }
                     }
                 },
+                // No contentDescription here: on a text field TalkBack can read it in place of the value.
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -304,7 +327,7 @@ private fun AllUnits(
             "${formatNumber(value, decimal = decimal)} ${from.symbol} is",
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp).semantics { heading() },
         )
         Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
             Column {
@@ -314,7 +337,7 @@ private fun AllUnits(
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .clickable(onClickLabel = "Convert to ${u.name}") { onPick(u) }
+                            .clickable(onClickLabel = "Convert to ${u.name}", role = Role.Button) { onPick(u) }
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {

@@ -66,7 +66,6 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -134,12 +133,16 @@ fun HomeScreen(onOpen: (Tool) -> Unit, startWithSettings: Boolean = false) {
     // Back undoes a search or filter before it leaves the app. With the keyboard up, Android closes that first.
     BackHandler(enabled = query.isNotEmpty() || filter != null) { showEverything() }
 
-    // TalkBack hears how many tools match once typing pauses, since the grid changing says nothing by itself.
+    // TalkBack hears how many tools match once typing pauses, since the grid changing says nothing by itself. A
+    // search still typed when coming back to the screen isn't counted again.
     val say = rememberAnnouncer()
-    val found = categories.sumOf { it.second.size }
+    val found = if (filter == FAVOURITES) favouriteTools.size else categories.sumOf { it.second.size }
+    var counted by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(query) {
-        if (query.isBlank()) return@LaunchedEffect
+        if (query.isBlank()) counted = ""
+        if (query.isBlank() || query == counted) return@LaunchedEffect
         delay(800)
+        counted = query
         say(searchSummary(found))
     }
 
@@ -347,8 +350,7 @@ private fun SearchField(query: String, onChange: (String) -> Unit, onSearch: () 
     OutlinedTextField(
         value = query,
         onValueChange = onChange,
-        // Named for TalkBack, which otherwise reads only what's typed once the placeholder has gone.
-        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Search tools and games" },
+        modifier = Modifier.fillMaxWidth(),
         placeholder = { Text("Search tools and games") },
         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
         trailingIcon = {

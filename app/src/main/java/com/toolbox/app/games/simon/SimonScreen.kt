@@ -24,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -41,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -51,6 +53,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -60,6 +63,7 @@ import com.toolbox.app.ui.common.GameGuardDialog
 import com.toolbox.app.ui.common.NewGameButton
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.rememberAnnouncer
 import com.toolbox.app.ui.common.rememberBestScore
 import com.toolbox.app.ui.common.rememberGameGuard
 import com.toolbox.app.ui.common.rememberHaptics
@@ -74,9 +78,14 @@ private val PAD_COLORS = listOf(GoogleColors.Green, GoogleColors.Red, GoogleColo
 /** How long a pad sounds when the player presses it. */
 private const val PRESS_TONE_MS = 280
 
+/** A round's pads as TalkBack says them while they play: "Green, red, blue". */
+internal fun sequenceSpoken(sequence: List<Int>): String =
+    sequence.mapIndexed { i, pad -> if (i == 0) PAD_NAMES[pad] else PAD_NAMES[pad].lowercase() }.joinToString(", ")
+
 @Composable
 fun SimonScreen(onBack: () -> Unit) {
     val haptics = rememberHaptics()
+    val say = rememberAnnouncer()
     val synth = rememberToneSynth()
     val (best, submitBest) = rememberBestScore("simon-round")
     val guard = rememberGameGuard()
@@ -148,6 +157,9 @@ fun SimonScreen(onBack: () -> Unit) {
             lit = -1
             delay(if (g.round == 1) 500 else 900)
             held = -1 // in case a finger is still resting on the last pad
+            // The lights can't be seen with TalkBack, so it says the whole round once as it starts: one announcement
+            // keeps up where one per pad would trip over each other at speed.
+            say(sequenceSpoken(g.sequence))
             val tone = SimonGame.toneMs(g.round)
             val gap = SimonGame.gapMs(g.round)
             for (pad in g.sequence) {
@@ -203,7 +215,16 @@ fun SimonScreen(onBack: () -> Unit) {
                 },
                 style = MaterialTheme.typography.bodyLarge,
                 color = if (phase == Phase.Over) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp).semantics { liveRegion = LiveRegionMode.Polite },
+                modifier = Modifier.padding(top = 4.dp).semantics {
+                    liveRegion = LiveRegionMode.Polite
+                    // The score is in the line above, which isn't read out as it changes, so the end says it here.
+                    if (phase == Phase.Over) {
+                        contentDescription = listOfNotNull(
+                            if (missed >= 0) "It was ${PAD_NAMES[missed].lowercase()}" else null,
+                            repeatedText(game?.completed ?: 0),
+                        ).joinToString(". ")
+                    }
+                },
             )
             Spacer(Modifier.height(24.dp))
             Board(
@@ -286,7 +307,8 @@ private fun Pad(
 ) {
     // Light instantly, fade out slowly, like the original's lamps.
     val glow by animateFloatAsState(if (lit) 1f else 0f, tween(if (lit) 30 else 220), label = "glow")
-    val dim = lerp(color, Color.Black, 0.5f)
+    // Dark enough that a lit pad stands out from it by 3:1, blue included.
+    val dim = lerp(color, Color.Black, 0.65f)
     val currentEnabled by rememberUpdatedState(enabled)
     val currentDown by rememberUpdatedState(onDown)
     val currentUp by rememberUpdatedState(onUp)
@@ -337,17 +359,22 @@ private fun Hub(phase: Phase, round: Int, onStart: () -> Unit) {
             .fillMaxSize()
             .border(6.dp, MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape),
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                when (phase) {
-                    Phase.Idle -> Text("Start", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    Phase.Over -> {
-                        Text("Game over", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.error)
-                        Text("Again", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    }
-                    else -> {
-                        Text("ROUND", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("$round", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+        // The hub is part of the toy and doesn't grow, so its words keep their size at large font scales (the round
+        // is also in the line above the board, which does grow).
+        val density = LocalDensity.current
+        CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = 1f)) {
+            Box(contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    when (phase) {
+                        Phase.Idle -> Text("Start", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Phase.Over -> {
+                            Text("Game over", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.error)
+                            Text("Again", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                        else -> {
+                            Text("ROUND", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("$round", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                        }
                     }
                 }
             }

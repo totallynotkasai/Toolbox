@@ -180,7 +180,7 @@ fun StackScreen(onBack: () -> Unit) {
                     .clip(RoundedCornerShape(28.dp))
                     .semantics {
                         role = Role.Button
-                        contentDescription = "Tower $score blocks high"
+                        contentDescription = (if (state == StackGame.State.Over) "Game over. " else "") + "Tower $score blocks high"
                         onClick(label = if (state == StackGame.State.Playing) "Drop the block" else "Start") { tap(); true }
                     }
                     .pointerInput(Unit) { detectTapGestures(onPress = { tap() }) },
@@ -208,7 +208,19 @@ fun StackScreen(onBack: () -> Unit) {
                     perfectAge < 0.9f -> perfectLabel
                     else -> null
                 }
-                if (label != null) {
+                if (state == StackGame.State.Over && label != null) {
+                    // Its own node, so TalkBack hears it appear as the game ends, with what the picture shows.
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.titleMedium,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.semantics {
+                            liveRegion = LiveRegionMode.Polite
+                            contentDescription = "Game over, $score blocks. " + label.replace("\n", " ")
+                        },
+                    )
+                } else if (label != null) {
                     Text(
                         label,
                         style = MaterialTheme.typography.titleMedium,

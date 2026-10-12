@@ -9,6 +9,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -62,7 +63,13 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker1D
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
@@ -137,6 +144,10 @@ internal fun remaining(options: List<String>, removed: Set<Int>): List<String> =
 /** Removed positions, stored as "0,3" so they survive a recreation; positions no longer on the list are dropped. */
 internal fun parseRemoved(text: String, size: Int): Set<Int> =
     text.split(',').mapNotNull { it.toIntOrNull() }.filter { it in 0 until size }.toSet()
+
+/** What TalkBack says for the wheel, which is only drawn: how many options it has and what they are. */
+internal fun wheelDescription(options: List<String>): String =
+    "Wheel with ${options.size} options: ${options.joinToString(", ")}"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -228,6 +239,12 @@ fun SpinnerScreen(onBack: () -> Unit) {
                     .widthIn(max = 360.dp)
                     .fillMaxWidth()
                     .aspectRatio(1f)
+                    // Flicking can't be done with TalkBack, so a double tap spins it, as the Spin button does.
+                    .semantics {
+                        contentDescription = wheelDescription(wheel)
+                        role = Role.Button
+                        if (spinning) disabled() else onClick(label = "Spin") { spin(); true }
+                    }
                     .pointerInput(slices) {
                         val tracker = VelocityTracker1D(isDataDifferential = true)
                         var prev = 0f
@@ -284,11 +301,7 @@ fun SpinnerScreen(onBack: () -> Unit) {
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
             )
             // Handy for picking an order (who goes first, second...): drop the winner and spin again.
-            Row(
-                Modifier.heightIn(min = 48.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            FlowRow(Modifier.heightIn(min = 48.dp), horizontalArrangement = Arrangement.Center) {
                 if (r != null && slices > 2 && !spinning) {
                     TextButton(onClick = {
                         removedText = (removed + options.indices.filter { it !in removed }[r]).joinToString(",")
@@ -342,13 +355,13 @@ private fun OptionsSheet(initial: List<String>, onDismiss: (List<String>) -> Uni
             Modifier.fillMaxWidth().padding(horizontal = 24.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Wheel options", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            Text("Wheel options", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).semantics { heading() })
             undo?.let { previous ->
                 TextButton(onClick = { items.clear(); items.addAll(previous); undo = null }) { Text("Undo") }
             }
             TextButton(onClick = { onDismiss(cleaned()) }) { Text("Done") }
         }
-        Row(Modifier.padding(horizontal = 24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(Modifier.padding(horizontal = 24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SuggestionChip(onClick = { replace(numbers(8)) }, label = { Text("Numbers 1–8") })
             SuggestionChip(onClick = { replace(listOf("Yes", "No")) }, label = { Text("Yes / No") })
             SuggestionChip(onClick = { replace(listOf("", "")) }, label = { Text("Clear") })
@@ -362,7 +375,8 @@ private fun OptionsSheet(initial: List<String>, onDismiss: (List<String>) -> Uni
                     OutlinedTextField(
                         value = text,
                         onValueChange = { items[i] = it.take(MAX_LENGTH) },
-                        placeholder = { Text("Option ${i + 1}") },
+                        // A label rather than a placeholder, so a filled-in field still says which option it is.
+                        label = { Text("Option ${i + 1}") },
                         singleLine = true,
                         modifier = Modifier.weight(1f),
                     )
@@ -398,10 +412,12 @@ private fun layoutLabels(options: List<String>, measurer: TextMeasurer, r: Float
         // Cycle Google's four colours; nudge the last slice if it would touch its twin across the seam.
         var c = i % 4
         if (i == n - 1 && c == 0 && n > 1) c = 2
-        val color = GoogleColors.all[c]
+        // Red is filled a shade darker and green takes dark text, so every label reaches 4.5:1 at the smaller sizes.
+        val color = GoogleColors.all[c].let { if (it == GoogleColors.Red) GoogleColors.RedInk else it }
+        val ink = if (color == GoogleColors.Yellow || color == GoogleColors.Green) DARK_TEXT else Color.White
         val label = measurer.measure(
             text,
-            TextStyle(color = if (color == GoogleColors.Yellow) DARK_TEXT else Color.White, fontSize = fontSize, fontWeight = FontWeight.Bold),
+            TextStyle(color = ink, fontSize = fontSize, fontWeight = FontWeight.Bold),
             overflow = TextOverflow.Ellipsis,
             maxLines = 1,
             constraints = Constraints(maxWidth = (r * 0.66f).toInt().coerceAtLeast(0)),
