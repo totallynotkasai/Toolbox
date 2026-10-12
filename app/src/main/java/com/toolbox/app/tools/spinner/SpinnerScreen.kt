@@ -66,7 +66,6 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.toolbox.app.ui.common.OnShake
-import com.toolbox.app.ui.common.ShakeToggleButton
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberHaptics
@@ -159,7 +158,6 @@ fun SpinnerScreen(onBack: () -> Unit) {
         title = "Spinner",
         onBack = onBack,
         actions = {
-            ShakeToggleButton(shake, "spin")
             IconButton(onClick = { editing = true }, enabled = !spinning) { Icon(Icons.Filled.Edit, contentDescription = "Edit options") }
         },
     ) { padding ->

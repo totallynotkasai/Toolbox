@@ -36,7 +36,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
-import com.toolbox.app.ui.common.VibesToggleButton
 import com.toolbox.app.ui.common.rememberVibes
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -86,7 +85,7 @@ fun MeditateScreen(onBack: () -> Unit) {
         running = false
     }
 
-    ToolScaffold(title = "Meditate", onBack = onBack, actions = { VibesToggleButton() }) { padding ->
+    ToolScaffold(title = "Meditate", onBack = onBack) { padding ->
         ToolBody(padding) {
             val primary = MaterialTheme.colorScheme.primary
             val tertiary = MaterialTheme.colorScheme.tertiary

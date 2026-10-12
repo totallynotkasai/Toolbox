@@ -43,7 +43,6 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker1D
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
-import com.toolbox.app.ui.common.VibesToggleButton
 import com.toolbox.app.ui.common.rememberPcmStream
 import com.toolbox.app.ui.common.rememberPref
 import com.toolbox.app.ui.common.rememberVibes
@@ -191,13 +190,12 @@ fun DialScreen(onBack: () -> Unit) {
                 if (dt > 0f) speed += ((shown - prev) / dt - speed) * min(1f, dt * 14f)
                 prev = shown
 
-                val nowMs = SystemClock.uptimeMillis()
                 val notchRate = if (m.notches > 0) abs(speed) / m.spacing else 0f
                 feel.fast = notchRate > FAST_NOTCHES
                 audio.whirr = if (m == DialMode.Free) speed else 0f
                 when {
-                    m == DialMode.Free -> vibes.buzz(min(1f, abs(speed) / MAX_FREE_SPEED) * 0.3f, nowMs)
-                    feel.fast -> vibes.buzz(0.2f + 0.4f * min(1f, (notchRate - FAST_NOTCHES) / 150f), nowMs)
+                    m == DialMode.Free -> vibes.buzz(min(1f, abs(speed) / MAX_FREE_SPEED) * 0.3f)
+                    feel.fast -> vibes.buzz(0.2f + 0.4f * min(1f, (notchRate - FAST_NOTCHES) / 150f))
                     else -> vibes.stopBuzz()
                 }
             }
@@ -207,7 +205,7 @@ fun DialScreen(onBack: () -> Unit) {
     val tickColor = MaterialTheme.colorScheme.onSurfaceVariant
     val accent = MaterialTheme.colorScheme.primary
 
-    ToolScaffold(title = "Rotary Dial", onBack = onBack, actions = { VibesToggleButton() }) { padding ->
+    ToolScaffold(title = "Rotary Dial", onBack = onBack) { padding ->
         ToolBody(padding) {
             SingleChoiceSegmentedButtonRow(Modifier.widthIn(max = 420.dp).fillMaxWidth()) {
                 DialMode.entries.forEachIndexed { i, m ->

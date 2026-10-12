@@ -45,7 +45,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.toolbox.app.ui.common.OnShake
-import com.toolbox.app.ui.common.ShakeToggleButton
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberHaptics
@@ -93,7 +92,6 @@ fun DiceScreen(onBack: () -> Unit) {
     ToolScaffold(
         title = "Roll a Die",
         onBack = onBack,
-        actions = { ShakeToggleButton(shake, "roll") },
     ) { padding ->
         ToolBody(padding) {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

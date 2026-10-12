@@ -1,7 +1,6 @@
 package com.toolbox.app.ui.common
 
 import android.content.Context
-import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -30,7 +29,6 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.Favourites
@@ -95,19 +93,6 @@ fun ToolBody(padding: PaddingValues, content: @Composable ColumnScope.() -> Unit
             content = content,
         )
     }
-}
-
-/** Thin haptics wrapper so tools can "tick" without each one touching the Vibrator APIs. */
-class Haptics(private val view: android.view.View) {
-    fun tick() = view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-    fun click() = view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-    fun heavy() = view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-}
-
-@Composable
-fun rememberHaptics(): Haptics {
-    val view = LocalView.current
-    return remember(view) { Haptics(view) }
 }
 
 /** Tiny persisted best-score store; SharedPreferences is plenty for a handful of ints. */

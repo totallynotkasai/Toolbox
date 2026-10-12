@@ -24,6 +24,9 @@ import com.toolbox.app.home.HomeScreen
 import com.toolbox.app.ui.common.LocalToolRoute
 import com.toolbox.app.ui.theme.ToolboxTheme
 
+/** Debug start route that opens the home screen's Settings sheet instead of a tool. */
+private const val SETTINGS_ROUTE = "settings"
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
@@ -36,11 +39,11 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Debug builds only: `adb shell am start -n com.toolbox.app/.MainActivity --es route compass` opens a screen
-     * directly, for screenshots on devices that don't allow adb input.
+     * directly, for screenshots on devices that don't allow adb input. `--es route settings` opens the Settings sheet.
      */
     private fun debugStartRoute(): String? {
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return null
-        return intent?.getStringExtra("route")?.takeIf { Tool.byRoute(it) != null }
+        return intent?.getStringExtra("route")?.takeIf { it == SETTINGS_ROUTE || Tool.byRoute(it) != null }
     }
 }
 
@@ -49,7 +52,7 @@ private fun ToolboxNavHost(startRoute: String? = null) {
     val nav = rememberNavController()
     var startHandled by rememberSaveable { mutableStateOf(false) } // so rotation doesn't reopen it
     LaunchedEffect(startRoute) {
-        if (startRoute != null && !startHandled) nav.navigate(startRoute) { launchSingleTop = true }
+        if (startRoute != null && startRoute != SETTINGS_ROUTE && !startHandled) nav.navigate(startRoute) { launchSingleTop = true }
         startHandled = true
     }
     NavHost(
@@ -62,7 +65,10 @@ private fun ToolboxNavHost(startRoute: String? = null) {
         popExitTransition = { slideOutOfContainer(SlideDirection.End, tween(300)) + fadeOut(tween(300)) },
     ) {
         composable("home") {
-            HomeScreen(onOpen = { tool -> nav.navigate(tool.route) { launchSingleTop = true } })
+            HomeScreen(
+                onOpen = { tool -> nav.navigate(tool.route) { launchSingleTop = true } },
+                startWithSettings = startRoute == SETTINGS_ROUTE,
+            )
         }
         Tool.entries.forEach { tool ->
             composable(tool.route) {

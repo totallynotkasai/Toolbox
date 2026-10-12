@@ -56,10 +56,8 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.OnShake
-import com.toolbox.app.ui.common.ShakeToggleButton
 import com.toolbox.app.ui.common.SteadyText
 import com.toolbox.app.ui.common.ToolScaffold
-import com.toolbox.app.ui.common.VibesToggleButton
 import com.toolbox.app.ui.common.rememberPref
 import com.toolbox.app.ui.common.rememberShakeEnabled
 import com.toolbox.app.ui.common.rememberToneSynth
@@ -174,10 +172,6 @@ fun DiceTossScreen(onBack: () -> Unit) {
     ToolScaffold(
         title = "Dice Toss",
         onBack = onBack,
-        actions = {
-            VibesToggleButton()
-            ShakeToggleButton(shake, "throw")
-        },
     ) { padding ->
         val stage = @Composable { modifier: Modifier ->
             DiceTable(

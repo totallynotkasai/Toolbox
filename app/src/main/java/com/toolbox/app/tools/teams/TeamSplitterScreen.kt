@@ -67,7 +67,6 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.OnShake
-import com.toolbox.app.ui.common.ShakeToggleButton
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.common.rememberPref
@@ -149,7 +148,6 @@ fun TeamSplitterScreen(onBack: () -> Unit) {
                 },
                 enabled = teams.isNotEmpty(),
             ) { Icon(Icons.Filled.Share, contentDescription = "Share teams") }
-            ShakeToggleButton(shake, "reshuffle")
         },
     ) { padding ->
         LazyColumn(

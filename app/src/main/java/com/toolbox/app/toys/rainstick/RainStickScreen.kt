@@ -40,7 +40,6 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.ToolScaffold
-import com.toolbox.app.ui.common.VibesToggleButton
 import com.toolbox.app.ui.common.rememberPcmStream
 import com.toolbox.app.ui.common.rememberSensorListener
 import com.toolbox.app.ui.common.rememberVibes
@@ -117,7 +116,7 @@ fun RainStickScreen(onBack: () -> Unit) {
                     sim.step(dt, gx * G_SCALE, gy * G_SCALE)
                     if (sim.hitCount > 0) audio.post(sim.hits.copyOf(sim.hitCount))
                     rate += (sim.hitEnergy / dt - rate) * min(1f, dt * 10f)
-                    vibes.buzz(rainVibration(rate), now / 1_000_000L)
+                    vibes.buzz(rainVibration(rate))
                     tick++
                 }
             }
@@ -125,7 +124,7 @@ fun RainStickScreen(onBack: () -> Unit) {
     }
 
     val glass = MaterialTheme.colorScheme.onSurface
-    ToolScaffold(title = "Rain Stick", onBack = onBack, actions = { VibesToggleButton() }) { padding ->
+    ToolScaffold(title = "Rain Stick", onBack = onBack) { padding ->
         Column(
             Modifier
                 .fillMaxSize()

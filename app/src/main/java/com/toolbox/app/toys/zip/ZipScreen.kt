@@ -50,7 +50,6 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.ToolScaffold
-import com.toolbox.app.ui.common.VibesToggleButton
 import com.toolbox.app.ui.common.rememberPcmStream
 import com.toolbox.app.ui.common.rememberPref
 import com.toolbox.app.ui.common.rememberVibes
@@ -159,17 +158,16 @@ fun ZipScreen(onBack: () -> Unit) {
                 feel.fast = rate > FAST_TEETH
                 audio.zipRate = if (m == ZipMode.Zip) rate else 0f
                 audio.creak = if (m == ZipMode.Ratchet) boltSpeed else 0f
-                val nowMs = SystemClock.uptimeMillis()
                 when {
-                    m == ZipMode.Zip && feel.fast -> vibes.buzz(0.25f + 0.6f * min(1f, (rate - FAST_TEETH) / 300f), nowMs)
-                    m == ZipMode.Ratchet && boltSpeed > 5f -> vibes.buzz(min(1f, boltSpeed / 540f) * 0.3f, nowMs)
+                    m == ZipMode.Zip && feel.fast -> vibes.buzz(0.25f + 0.6f * min(1f, (rate - FAST_TEETH) / 300f))
+                    m == ZipMode.Ratchet && boltSpeed > 5f -> vibes.buzz(min(1f, boltSpeed / 540f) * 0.3f)
                     else -> vibes.stopBuzz()
                 }
             }
         }
     }
 
-    ToolScaffold(title = "Zip & Ratchet", onBack = onBack, actions = { VibesToggleButton() }) { padding ->
+    ToolScaffold(title = "Zip & Ratchet", onBack = onBack) { padding ->
         Column(
             Modifier.fillMaxSize().padding(padding).padding(horizontal = 24.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,

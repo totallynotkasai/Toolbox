@@ -41,7 +41,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
-import com.toolbox.app.ui.common.VibesToggleButton
 import com.toolbox.app.ui.common.rememberPcmStream
 import com.toolbox.app.ui.common.rememberVibes
 import kotlin.math.PI
@@ -117,7 +116,6 @@ private class CatAnim {
     var tail = 0f   // 0..1 phase
     var chirp = 0f  // 1 on a head tap, fading to 0
     var brush = 0f  // 0..1 stroking speed, decays quickly
-    var quiet = 0f  // seconds to hold the purr buzz so a one-shot vibration isn't cut off
 
     fun advance(dt: Float, mood: CatMood) {
         // Resting breaths are slow; a purring cat breathes every ~1.8 s.
@@ -125,7 +123,6 @@ private class CatAnim {
         tail = (tail + dt * (0.3f + 1.1f * mood.grumble)) % 1f
         chirp = max(0f, chirp - dt / 0.7f)
         brush *= exp(-dt * 7f)
-        quiet = max(0f, quiet - dt)
     }
 }
 
@@ -164,12 +161,12 @@ fun CatScreen(onBack: () -> Unit) {
                 audio.purr = mood.purr
                 audio.breath = anim.breath
                 audio.brush = anim.brush
-                if (anim.quiet <= 0f) vibes.buzz(purrVibration(mood.purr, purrEnvelope(anim.breath)), now / 1_000_000L)
+                vibes.buzz(purrVibration(mood.purr, purrEnvelope(anim.breath)))
             }
         }
     }
 
-    ToolScaffold(title = "Purring Cat", onBack = onBack, actions = { VibesToggleButton() }) { padding ->
+    ToolScaffold(title = "Purring Cat", onBack = onBack) { padding ->
         ToolBody(padding) {
             Box(
                 Modifier
@@ -184,7 +181,6 @@ fun CatScreen(onBack: () -> Unit) {
                             if (hx * hx + hy * hy < 0.17f * 0.17f) {
                                 audio.chirp()
                                 anim.chirp = 1f
-                                anim.quiet = 0.2f
                                 vibes.pattern(longArrayOf(0, 12, 55, 14), floatArrayOf(0f, 0.35f, 0f, 0.45f))
                             }
                         }
@@ -202,7 +198,6 @@ fun CatScreen(onBack: () -> Unit) {
                                     if (dx > 0f && mood.grumble < 0.5f) hasStroked = true
                                     if (mood.stroke(dx)) {
                                         audio.grumble()
-                                        anim.quiet = 0.3f
                                         vibes.pattern(
                                             longArrayOf(0, 35, 25, 45, 25, 60),
                                             floatArrayOf(0f, 0.5f, 0f, 0.6f, 0f, 0.4f),

@@ -1,18 +1,11 @@
 package com.toolbox.app.ui.common
 
 import android.hardware.Sensor
-import android.widget.Toast
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Sensors
-import androidx.compose.material.icons.filled.SensorsOff
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconToggleButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.ui.platform.LocalContext
 import kotlin.math.sqrt
 
 /**
@@ -93,28 +86,7 @@ private class GravityFilter(private val alpha: Float = 0.8f) {
     }
 }
 
-/** The shared "shake to decide" switch (default on), so every screen with a shake toggle stays in step. */
+/** The app-wide "shake to decide" switch (default on), set in the home screen's Settings sheet. */
 @Composable
 fun rememberShakeEnabled(): MutableState<Boolean> = rememberPref(Prefs.SHAKE_ENABLED, true)
 
-/**
- * Top-bar toggle for [rememberShakeEnabled]. [action] finishes the sentence "Shake to …" (e.g. "roll"),
- * which is used for the accessibility label and the confirmation toast.
- */
-@Composable
-fun ShakeToggleButton(shake: MutableState<Boolean>, action: String) {
-    val context = LocalContext.current
-    IconToggleButton(
-        checked = shake.value,
-        onCheckedChange = {
-            shake.value = it
-            Toast.makeText(context, "Shake to $action: ${if (it) "on" else "off"}", Toast.LENGTH_SHORT).show()
-        },
-    ) {
-        Icon(
-            // The motion sensor, not a phone, so it isn't mistaken for the vibration switch beside it.
-            if (shake.value) Icons.Filled.Sensors else Icons.Filled.SensorsOff,
-            contentDescription = "Shake to $action",
-        )
-    }
-}

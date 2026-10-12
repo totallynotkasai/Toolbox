@@ -28,7 +28,6 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.OnShake
-import com.toolbox.app.ui.common.ShakeToggleButton
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberHaptics
@@ -71,7 +70,6 @@ fun RandomNumberScreen(onBack: () -> Unit) {
     ToolScaffold(
         title = "Random Number",
         onBack = onBack,
-        actions = { ShakeToggleButton(shake, "generate") },
     ) { padding ->
         ToolBody(padding) {
             AnimatedContent(
