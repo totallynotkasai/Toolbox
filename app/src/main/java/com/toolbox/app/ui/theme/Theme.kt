@@ -10,7 +10,9 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -23,7 +25,35 @@ object GoogleColors {
     val Yellow = Color(0xFFFBBC04)
     val Green = Color(0xFF34A853)
     val all = listOf(Blue, Red, Yellow, Green)
+
+    /*
+     * Darker tones of the accents for light mode. Yellow, green and red are too pale to read as icons, marks or text
+     * on the light surfaces (yellow is 1.6:1 on a card), so in light mode those are drawn in these, which reach 3:1
+     * on a card and on a tile's tint of the accent, and 4.5:1 on white. Dark mode keeps the bright originals.
+     */
+    val YellowInk = Color(0xFFB05A00)
+    val GreenInk = Color(0xFF188038)
+    val RedInk = Color(0xFFD93025)
+
+    /** [accent] as drawn for icons, marks and text on a [light] surface; colours that aren't accents are unchanged. */
+    fun ink(accent: Color, light: Boolean): Color = if (!light) accent else when (accent) {
+        Yellow -> YellowInk
+        Green -> GreenInk
+        Red -> RedInk
+        else -> accent
+    }
 }
+
+/** Whether the app is showing its light colours, read from the surface so it also holds under dynamic colour. */
+val ColorScheme.isLight: Boolean get() = surface.luminance() > 0.5f
+
+/**
+ * This accent as drawn for icons, marks and text on the app's surfaces: a darker tone of yellow, green and red in light
+ * mode (see [GoogleColors.ink]). Large filled areas, such as a game piece or a coloured panel, can keep the original.
+ */
+@Composable
+@ReadOnlyComposable
+fun Color.ink(): Color = GoogleColors.ink(this, MaterialTheme.colorScheme.isLight)
 
 /*
  * The colour schemes used without dynamic colour (Android 8 to 11). Every role is given, from Google's Material 3
