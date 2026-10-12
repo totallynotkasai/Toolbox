@@ -1,20 +1,17 @@
 package com.toolbox.app.tools.timer
 
-import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
 import com.toolbox.app.MainActivity
 import com.toolbox.app.R
 import com.toolbox.app.Tool
+import com.toolbox.app.ui.common.hasNotificationPermission
 import java.util.Date
 
 /**
@@ -28,9 +25,7 @@ internal class TimerNotifications(private val context: Context) {
     /** Notifications are allowed, and the alarm channel hasn't been turned off. */
     fun allowed(): Boolean {
         createChannels()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) return false
+        if (!hasNotificationPermission(context)) return false
         if (!manager.areNotificationsEnabled()) return false
         return manager.getNotificationChannel(ALARM_CHANNEL)?.importance != NotificationManager.IMPORTANCE_NONE
     }
@@ -144,12 +139,7 @@ internal class TimerNotifications(private val context: Context) {
 }
 
 /** Opens the Timer screen, from a notification or the alarm icon in the status bar. */
-internal fun openTimerIntent(context: Context): PendingIntent {
-    val intent = Intent(context, MainActivity::class.java)
-        .putExtra(MainActivity.EXTRA_OPEN, Tool.Timer.route)
-        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-    return PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-}
+internal fun openTimerIntent(context: Context): PendingIntent = MainActivity.openToolIntent(context, Tool.Timer)
 
 /** "4:05" or "1:02:03", for a time left. */
 fun formatClock(ms: Long): String {

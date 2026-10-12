@@ -1,13 +1,6 @@
 package com.toolbox.app.tools.timer
 
-import android.Manifest
-import android.annotation.SuppressLint
 import android.content.Context
-import android.content.Intent
-import android.content.SharedPreferences
-import android.content.pm.PackageManager
-import android.os.Build
-import android.provider.Settings
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,29 +8,19 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.TextAutoSize
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -55,16 +38,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LifecycleEventEffect
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
-import com.toolbox.app.ui.common.openAppSettings
 import com.toolbox.app.ui.common.rememberAnnouncer
-import com.toolbox.app.ui.common.rememberPermission
-import com.toolbox.app.ui.common.rememberPref
-import com.toolbox.app.ui.common.startFirst
+import com.toolbox.app.ui.common.rememberNotificationAccess
+import com.toolbox.app.ui.common.NotificationsOffCard
+import com.toolbox.app.ui.common.rememberStored
 import java.util.Date
 
 @Composable
@@ -78,32 +57,12 @@ fun TimerScreen(onBack: () -> Unit) {
 private fun TimerPane() {
     val context = LocalContext.current
     val timer = remember(context) { TimerController(context) }
-    val state by rememberTimerState(timer)
-    var canNotify by remember { mutableStateOf(timer.canNotify) }
-    var asked by rememberPref("timer_notifications_asked", false)
-
-    // Only asked for on Android 13+; below that Android reads it as an unknown permission, never granted.
-    @SuppressLint("InlinedApi")
-    val permission = rememberPermission(Manifest.permission.POST_NOTIFICATIONS) {
-        canNotify = timer.canNotify
-        timer.refresh() // Post the countdown now that it's allowed.
-    }
-    fun allowNotifications() {
-        // Below Android 13, or once allowed but switched off in Android's settings, only the settings can turn them on.
-        val canAsk = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasPermission(context) && !permission.blocked
-        asked = true
-        if (canAsk) permission.request() else context.openNotificationSettings()
-    }
+    val state by rememberStored(timer.prefs) { timer.state }
+    // Refreshing re-posts the countdown once it's allowed, and catches a reboot.
+    val notifications = rememberNotificationAccess("timer_notifications_asked", { timer.canNotify }, { timer.refresh() })
     fun start() {
         timer.start()
-        // Asked once, the first time a timer starts; after that the card below offers it.
-        if (!asked && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasPermission(context)) allowNotifications()
-    }
-
-    // Coming back from Android's settings, or after a reboot was spotted.
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        canNotify = timer.canNotify
-        timer.refresh()
+        notifications.askOnce()
     }
 
     var now by remember { mutableLongStateOf(TimerController.now()) }
@@ -118,8 +77,12 @@ private fun TimerPane() {
 
     val ringing = state.phase == TimerPhase.Ringing
 
-    if (!canNotify && (asked || state.phase != TimerPhase.Idle)) {
-        NotificationsOffCard(onAllow = ::allowNotifications)
+    if (!notifications.canNotify && (notifications.asked || state.phase != TimerPhase.Idle)) {
+        NotificationsOffCard(
+            "Notifications are off, so the countdown and the alarm's Stop button can't show outside the app. " +
+                "The alarm still rings; open Toolbox to stop it.",
+            onAllow = notifications::allow,
+        )
         Spacer(Modifier.height(24.dp))
     }
 
@@ -227,43 +190,6 @@ private fun TimerPane() {
     }
 }
 
-/** Explains what doesn't work without notifications, with a way to allow them. */
-@Composable
-private fun NotificationsOffCard(onAllow: () -> Unit) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp), verticalAlignment = Alignment.Top) {
-            Icon(
-                Icons.Filled.NotificationsOff, contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 12.dp),
-            )
-            Text(
-                "Notifications are off, so the countdown and the alarm's Stop button can't show outside the app. " +
-                    "The alarm still rings; open Toolbox to stop it.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-        TextButton(onClick = onAllow, modifier = Modifier.align(Alignment.End).padding(end = 8.dp)) {
-            Text("Allow notifications")
-        }
-    }
-}
-
-/** The stored timer, updated whenever the screen, the alarm or a notification button changes it. */
-@Composable
-private fun rememberTimerState(timer: TimerController): State<TimerState> {
-    val state = remember(timer) { mutableStateOf(timer.state) }
-    DisposableEffect(timer) {
-        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> state.value = timer.state }
-        timer.prefs.registerOnSharedPreferenceChangeListener(listener)
-        state.value = timer.state
-        onDispose { timer.prefs.unregisterOnSharedPreferenceChangeListener(listener) }
-    }
-    return state
-}
-
 /** The clock time a timer ending at elapsed-realtime [endAt] rings, like "14:32". */
 @Composable
 private fun ringTime(context: Context, endAt: Long): String = remember(endAt) {
@@ -281,12 +207,4 @@ internal fun spokenDuration(ms: Long): String {
         part(m, "minute").takeIf { m > 0 },
         part(s, "second").takeIf { s > 0 || total == 0L },
     ).joinToString(" ")
-}
-
-private fun hasPermission(context: Context) = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-
-private fun Context.openNotificationSettings() {
-    val channel = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-    if (!startFirst(channel)) openAppSettings()
 }

@@ -7,9 +7,10 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Step counter: runtime permission on API 29+ (not needed for the sensor below that). -->
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
-    <!-- Step counter: lets its persisted midnight/hourly snapshot jobs survive a reboot. -->
+    <!-- Step counter: lets its persisted midnight/hourly snapshot jobs survive a reboot. Stopwatch: posts a running
+         stopwatch's notification again after a reboot. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- Timer: its countdown and alarm notifications; asked for when a timer is first started (API 33+). -->
+    <!-- Timer and Stopwatch: their notifications; asked for when either is first started (API 33+). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Timer: the alarm that ends it fires on time even when the phone is asleep. USE_EXACT_ALARM is granted at
          install from API 33 and is meant for alarm and timer apps; API 31-32 need SCHEDULE_EXACT_ALARM instead. -->
@@ -66,5 +67,20 @@
             android:name=".tools.timer.TimerAlarmService"
             android:exported="false"
             android:foregroundServiceType="systemExempted" />
+
+        <!-- Stopwatch: the buttons on its notification. -->
+        <receiver
+            android:name=".tools.stopwatch.StopwatchReceiver"
+            android:exported="false" />
+
+        <!-- Stopwatch: brings its notification back after a reboot. Exported so Android can deliver BOOT_COMPLETED,
+             which only the system can send. -->
+        <receiver
+            android:name=".tools.stopwatch.StopwatchBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

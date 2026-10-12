@@ -1,5 +1,7 @@
 package com.toolbox.app
 
+import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.ApplicationInfo
@@ -37,7 +39,7 @@ import com.toolbox.app.ui.common.Prefs
 import com.toolbox.app.ui.theme.ToolboxTheme
 
 /** Screens a notification may open through [MainActivity.EXTRA_OPEN], in release builds too. */
-private val OPENABLE_ROUTES = setOf(Tool.Timer.route)
+private val OPENABLE_ROUTES = setOf(Tool.Timer.route, Tool.Stopwatch.route)
 
 /** Debug start route that opens the home screen's Settings sheet instead of a tool. */
 private const val SETTINGS_ROUTE = "settings"
@@ -131,6 +133,16 @@ class MainActivity : ComponentActivity() {
     companion object {
         /** Intent extra naming a screen to open, one of [OPENABLE_ROUTES]. */
         const val EXTRA_OPEN = "open"
+
+        /** Opens [tool] from a notification, over whatever the app is showing; it must be one of [OPENABLE_ROUTES]. */
+        fun openToolIntent(context: Context, tool: Tool): PendingIntent {
+            val intent = Intent(context, MainActivity::class.java)
+                .putExtra(EXTRA_OPEN, tool.route)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            return PendingIntent.getActivity(
+                context, tool.ordinal, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+        }
     }
 }
 
