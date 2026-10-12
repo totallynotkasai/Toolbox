@@ -47,7 +47,9 @@ class ToolIconsTest {
         val onDisk = dir.listFiles { f -> f.extension == "svg" }.orEmpty().map { it.name }.toSet()
         assertEquals("Run ./gradlew testDebugUnitTest -PupdateIcons", expected.keys, onDisk)
         expected.forEach { (name, svg) ->
-            assertEquals("$name is out of date. Run ./gradlew testDebugUnitTest -PupdateIcons", svg, File(dir, name).readText())
+            // Git may check the files out with Windows line endings.
+            val file = File(dir, name).readText().replace("\r\n", "\n")
+            assertEquals("$name is out of date. Run ./gradlew testDebugUnitTest -PupdateIcons", svg, file)
         }
     }
 }
