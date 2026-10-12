@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -63,6 +64,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.ToolScaffold
@@ -80,30 +82,57 @@ fun UnitConverterScreen(onBack: () -> Unit) {
     val decimal = decimalMark(LocalLocale.current.platformLocale)
     var categoryName by rememberPref("units_category", UnitCategory.Length.name)
     val category = UnitCategory.entries.firstOrNull { it.name == categoryName } ?: UnitCategory.Length
+    val cooking = category == UnitCategory.Cooking
+    var ingredientId by rememberPref("units_cooking_ingredient", DEFAULT_INGREDIENT)
+    val ingredient = ingredient(ingredientId)
 
     // The last pair of units is remembered per category.
     var fromId by rememberPref("units_${category.name}_from", category.defaultFrom)
     var toId by rememberPref("units_${category.name}_to", category.defaultTo)
     val from = category.unit(fromId) ?: category.unit(category.defaultFrom)!!
-    val to = category.unit(toId) ?: category.unit(category.defaultTo)!!
+    // Picking a unit keeps a Cooking pair convertible, so this only guards against a stray saved pair.
+    val to = (category.unit(toId) ?: category.unit(category.defaultTo)!!)
+        .let { if (cooking && !pairs(from, it)) partnerFor(from) else it }
+    val showIngredient = cooking && needsIngredient(from, to)
+
+    fun conv(value: Double, a: UnitDef, b: UnitDef) =
+        if (cooking) convertCooking(value, a, b, ingredient) else convert(value, a, b)
+
+    /** [value] in [a], as text in [b]. Gas marks snap to the chart and say when they're approximate. */
+    fun show(value: Double, a: UnitDef, b: UnitDef, significant: Int = 10) =
+        if (cooking && b.id == GAS_MARK_ID) gasMarkText(value, a, decimal) else formatNumber(conv(value, a, b), significant, decimal)
 
     // Only the field the user last typed in holds real text; the other one is always derived from it,
     // so changing a unit re-converts instead of leaving a stale number behind.
     var anchor by rememberSaveable { mutableIntStateOf(0) } // 0 = top ("from"), 1 = bottom ("to")
-    var anchorText by rememberSaveable { mutableStateOf("1") }
+    // Null until something is typed, picked or swapped, which starts from 1, or gas mark 4 for an oven temperature.
+    var typed by rememberSaveable { mutableStateOf<String?>(null) }
+    val anchorUnit = if (anchor == 0) from else to
+    val anchorText = typed ?: if (cooking) formatNumber(startValue(anchorUnit), decimal = decimal) else "1"
     val anchorValue = parseNumber(anchorText, decimal)
-    val derivedText = anchorValue?.let {
-        formatNumber(if (anchor == 0) convert(it, from, to) else convert(it, to, from), decimal = decimal)
-    } ?: ""
+    val derivedUnit = if (anchor == 0) to else from
+    val derivedText = anchorValue?.let { show(it, anchorUnit, derivedUnit) } ?: ""
     val topText = if (anchor == 0) anchorText else derivedText
     val bottomText = if (anchor == 1) anchorText else derivedText
-    val fromValue = if (anchor == 0) anchorValue else anchorValue?.let { convert(it, to, from) }
+    val fromValue = (if (anchor == 0) anchorValue else anchorValue?.let { conv(it, to, from) })?.takeIf { it.isFinite() }
+    // The top number as plain text, for when it becomes the one typed in ("≈ 4" and "½" can't be read back).
+    val topNumber = if (anchor == 0) anchorText else fromValue?.let { formatNumber(it, decimal = decimal) } ?: ""
+    val ovenLine = if (cooking && from.group == UnitGroup.Oven) anchorValue?.let { gasChartLine(it, anchorUnit) } else null
 
     // Typing in one field, or changing a unit, quietly changes the number in the other. TalkBack hears the new
     // number once the changes stop for a second, rather than after every key.
     val say = rememberAnnouncer()
     var changes by remember { mutableIntStateOf(0) }
-    val result by rememberUpdatedState(derivedText.ifEmpty { null }?.let { "equals $it ${if (anchor == 0) to.name else from.name}" })
+    val result by rememberUpdatedState(
+        derivedText.ifEmpty { null }?.let {
+            when {
+                it == "—" && ovenLine != null -> ovenLine
+                cooking && derivedUnit.id == GAS_MARK_ID ->
+                    "equals ${if (it.startsWith("≈")) "about " else ""}gas mark ${it.removePrefix("≈ ")}"
+                else -> "equals $it ${derivedUnit.name}"
+            }
+        },
+    )
     LaunchedEffect(changes) {
         if (changes == 0) return@LaunchedEffect
         delay(1000)
@@ -112,7 +141,7 @@ fun UnitConverterScreen(onBack: () -> Unit) {
 
     fun edit(field: Int, text: String) {
         anchor = field
-        anchorText = text.filter { it in ALLOWED_INPUT }.take(24)
+        typed = text.filter { it in ALLOWED_INPUT }.take(24)
         changes++
     }
 
@@ -120,17 +149,37 @@ fun UnitConverterScreen(onBack: () -> Unit) {
         if (c == category) return
         categoryName = c.name
         anchor = 0
-        anchorText = "1"
+        typed = null
+    }
+
+    // In Cooking, picking an oven unit on one side while the other is a volume or weight (or the other way round)
+    // switches the other side to match, and starts again from a typical number: 1 cup, or gas mark 4.
+    fun pick(field: Int, unit: UnitDef) {
+        val other = if (field == 0) to else from
+        if (field == 0) fromId = unit.id else toId = unit.id
+        if (cooking && !pairs(unit, other)) {
+            val partner = partnerFor(unit)
+            if (field == 0) toId = partner.id else fromId = partner.id
+            anchor = 0
+            typed = formatNumber(startValue(if (field == 0) unit else partner), decimal = decimal)
+        }
+        changes++
     }
 
     fun swap() {
         haptics.click()
-        // Keep the number on top and swap the units under it: "10 cm = 3.94 in" becomes "10 in = 25.4 cm".
-        val keep = topText
         fromId = to.id
         toId = from.id
-        anchor = 0
-        anchorText = keep
+        if (cooking && from.group == UnitGroup.Oven) {
+            // An oven temperature keeps its unit, so "185 °C ≈ gas mark 4" becomes "gas mark ≈ 4 = 185 °C" rather
+            // than "gas mark 185", which is off the chart.
+            anchor = 1 - anchor
+        } else {
+            // Keep the number on top and swap the units under it: "10 cm = 3.94 in" becomes "10 in = 25.4 cm".
+            val keep = topNumber
+            anchor = 0
+            typed = keep
+        }
         changes++
     }
 
@@ -144,7 +193,10 @@ fun UnitConverterScreen(onBack: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             item("categories") {
+                // Start with the chosen category in view, with a little of the one before it showing.
+                val state = rememberLazyListState(initialFirstVisibleItemIndex = (category.ordinal - 1).coerceAtLeast(0))
                 LazyRow(
+                    state = state,
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
@@ -174,7 +226,7 @@ fun UnitConverterScreen(onBack: () -> Unit) {
                         text = topText,
                         isError = anchor == 0 && anchorText.isNotBlank() && anchorValue == null,
                         allowNegative = category == UnitCategory.Temperature,
-                        onUnit = { fromId = it.id; changes++ },
+                        onUnit = { pick(0, it) },
                         onText = { edit(0, it) },
                     )
                     FilledTonalIconButton(onClick = ::swap, modifier = Modifier.padding(vertical = 4.dp)) {
@@ -187,14 +239,37 @@ fun UnitConverterScreen(onBack: () -> Unit) {
                         text = bottomText,
                         isError = anchor == 1 && anchorText.isNotBlank() && anchorValue == null,
                         allowNegative = category == UnitCategory.Temperature,
-                        onUnit = { toId = it.id; changes++ },
+                        onUnit = { pick(1, it) },
                         onText = { edit(1, it) },
                     )
+                }
+            }
+
+            if (showIngredient) {
+                item("ingredient") {
+                    IngredientChips(
+                        selected = ingredient,
+                        onPick = { haptics.tick(); ingredientId = it.id; changes++ },
+                        modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth().padding(top = 12.dp),
+                    )
+                }
+            }
+
+            item("notes") {
+                Column(
+                    Modifier.widthIn(max = 520.dp).fillMaxWidth().padding(horizontal = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "1 ${from.symbol} = ${formatNumber(convert(1.0, from, to), 8, decimal)} ${to.symbol}",
+                        when {
+                            ovenLine != null -> ovenLine
+                            showIngredient -> "1 ${from.symbol} of ${ingredient.name.lowercase()} = ${show(1.0, from, to, 8)} ${to.symbol}"
+                            else -> "1 ${from.symbol} = ${show(1.0, from, to, 8)} ${to.symbol}"
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
                     )
                     if (category == UnitCategory.Temperature && fromValue != null && from.toBase(fromValue) < ABSOLUTE_ZERO_C) {
                         Text(
@@ -204,29 +279,106 @@ fun UnitConverterScreen(onBack: () -> Unit) {
                             modifier = Modifier.padding(top = 4.dp),
                         )
                     }
-                    if (category == UnitCategory.Volume) {
+                    val note = when {
+                        showIngredient -> "Spoons are metric (5 mL / 15 mL). Cup weights are averages, so weigh when it matters."
+                        category == UnitCategory.Volume || (cooking && from.group == UnitGroup.Volume) ->
+                            "Spoons are metric (5 mL / 15 mL); the metric cup is 250 mL."
+                        cooking && from.group == UnitGroup.Oven -> "Fan ovens are set 20 °C lower."
+                        else -> null
+                    }
+                    if (note != null) {
                         Text(
-                            "Spoons are metric (5 mL / 15 mL); the UK cup is the 250 mL metric cup.",
+                            note,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
                             modifier = Modifier.padding(top = 4.dp),
                         )
                     }
                 }
             }
 
-            if (fromValue != null) {
+            // The list starts from the top number, except for an oven temperature typed under a gas mark: the mark
+            // is rounded, so the list starts from what was typed, and tapping a row changes the top unit instead.
+            val fromTyped = cooking && from.group == UnitGroup.Oven && anchor == 1
+            val listUnit = if (fromTyped) to else from
+            val listValue = if (fromTyped) anchorValue else fromValue
+            if (listValue != null) {
                 item("all") {
+                    // In Cooking, only the units it converts to: oven temperatures together, and volumes with
+                    // weights only while an ingredient is chosen.
+                    val units = when {
+                        !cooking -> category.units
+                        showIngredient -> category.units.filter { it.group != UnitGroup.Oven }
+                        else -> category.units.filter { it.group == listUnit.group }
+                    }
+                    val amount = if (cooking && listUnit.id == GAS_MARK_ID) {
+                        "Gas mark ${formatGasMark(listValue, decimal)}"
+                    } else {
+                        "${formatNumber(listValue, decimal = decimal)} ${listUnit.symbol}"
+                    }
                     AllUnits(
-                        value = fromValue,
-                        from = from,
-                        selected = to,
-                        units = category.units,
-                        decimal = decimal,
-                        onPick = { haptics.tick(); toId = it.id; anchor = 0; anchorText = topText; changes++ },
+                        heading = "$amount${if (showIngredient) " of ${ingredient.name.lowercase()}" else ""} is",
+                        units = units.filter { it !== listUnit },
+                        selected = if (fromTyped) from else to,
+                        valueText = { u ->
+                            if (cooking && u.id == GAS_MARK_ID) {
+                                val mark = show(listValue, listUnit, u)
+                                when {
+                                    mark == "—" -> mark
+                                    mark.startsWith("≈ ") -> "about gas mark ${mark.removePrefix("≈ ")}"
+                                    else -> "gas mark $mark"
+                                }
+                            } else {
+                                "${show(listValue, listUnit, u)} ${u.symbol}"
+                            }
+                        },
+                        onPick = {
+                            haptics.tick()
+                            if (fromTyped) {
+                                fromId = it.id
+                            } else {
+                                toId = it.id
+                                anchor = 0
+                                typed = topNumber
+                            }
+                            changes++
+                        },
                         modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
                     )
                 }
+            }
+        }
+    }
+}
+
+/** The Cooking category's ingredients, shown while a volume meets a weight. */
+@Composable
+private fun IngredientChips(selected: Ingredient, onPick: (Ingredient) -> Unit, modifier: Modifier) {
+    // Start with the chosen one in view, with a little of the one before it showing.
+    val state = rememberLazyListState(initialFirstVisibleItemIndex = (INGREDIENTS.indexOf(selected) - 1).coerceAtLeast(0))
+    Column(modifier) {
+        Text(
+            "Ingredient",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(start = 20.dp, bottom = 4.dp).semantics { heading() },
+        )
+        LazyRow(
+            state = state,
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            items(INGREDIENTS, key = { it.id }) { i ->
+                FilterChip(
+                    selected = i === selected,
+                    onClick = { onPick(i) },
+                    label = { Text(i.name) },
+                    leadingIcon = if (i === selected) {
+                        { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) }
+                    } else null,
+                )
             }
         }
     }
@@ -253,7 +405,9 @@ private fun ConversionSide(
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
             ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
                 OutlinedTextField(
-                    value = "${unit.name} (${unit.symbol})",
+                    // "Cups (US)" rather than "Cups (US) (cup (US))", and "Gas mark" rather than "Gas mark (gas mark)".
+                    value = if ('(' in unit.symbol || unit.symbol.equals(unit.name, ignoreCase = true)) unit.name
+                    else "${unit.name} (${unit.symbol})",
                     onValueChange = {},
                     readOnly = true,
                     singleLine = true,
@@ -262,7 +416,16 @@ private fun ConversionSide(
                     modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
                 )
                 ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                    units.forEach { u ->
+                    units.forEachIndexed { i, u ->
+                        // Cooking's units come in groups (Volume, Weight, Oven), each under a heading.
+                        if (u.group != null && u.group != units.getOrNull(i - 1)?.group) {
+                            Text(
+                                u.group.name,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).semantics { heading() },
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text(u.name) },
                             trailingIcon = { Text(u.symbol, color = MaterialTheme.colorScheme.onSurfaceVariant) },
@@ -311,28 +474,26 @@ private fun ConversionSide(
     }
 }
 
-/** The current value in every other unit of the category. Tapping a row makes it the "To" unit. */
+/** The current value in each of [units], as [valueText] gives it. Tapping a row makes it the "To" unit. */
 @Composable
 private fun AllUnits(
-    value: Double,
-    from: UnitDef,
-    selected: UnitDef,
+    heading: String,
     units: List<UnitDef>,
-    decimal: Char,
+    selected: UnitDef,
+    valueText: (UnitDef) -> String,
     onPick: (UnitDef) -> Unit,
     modifier: Modifier,
 ) {
     Column(modifier) {
         Text(
-            "${formatNumber(value, decimal = decimal)} ${from.symbol} is",
+            heading,
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp).semantics { heading() },
         )
         Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
             Column {
-                val others = units.filter { it !== from }
-                others.forEachIndexed { i, u ->
+                units.forEachIndexed { i, u ->
                     val isSelected = u === selected
                     Row(
                         Modifier
@@ -351,14 +512,14 @@ private fun AllUnits(
                         )
                         Box(Modifier.padding(start = 12.dp)) {
                             Text(
-                                "${formatNumber(convert(value, from, u), decimal = decimal)} ${u.symbol}",
+                                valueText(u),
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                 color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                             )
                         }
                     }
-                    if (i < others.lastIndex) HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                    if (i < units.lastIndex) HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
                 }
             }
         }

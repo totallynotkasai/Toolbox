@@ -10,6 +10,7 @@ import kotlin.math.abs
  * One unit of measure. Most units are a plain factor to their category's base unit ([linear]);
  * temperature (an offset) and L/100 km (an inverse) supply their own conversions.
  * [id] is stable and is what gets saved in Prefs, so don't rename ids.
+ * [group] sorts the Cooking category into volumes, weights and oven temperatures; other categories leave it null.
  */
 class UnitDef(
     val id: String,
@@ -17,6 +18,7 @@ class UnitDef(
     val symbol: String,
     val toBase: (Double) -> Double,
     val fromBase: (Double) -> Double,
+    val group: UnitGroup? = null,
 ) {
     override fun toString() = id
 }
@@ -25,14 +27,14 @@ private fun linear(id: String, name: String, symbol: String, factor: Double) =
     UnitDef(id, name, symbol, { it * factor }, { it / factor })
 
 // Exact definitions (international yard and pound, 1959; imperial gallon, 1985).
-private const val INCH = 0.0254
-private const val FOOT = 0.3048
-private const val YARD = 0.9144
-private const val MILE = 1609.344
-private const val NAUTICAL_MILE = 1852.0
-private const val POUND = 0.45359237
-private const val UK_GALLON = 4.54609
-private const val US_GALLON = 3.785411784
+internal const val INCH = 0.0254
+internal const val FOOT = 0.3048
+internal const val YARD = 0.9144
+internal const val MILE = 1609.344
+internal const val NAUTICAL_MILE = 1852.0
+internal const val POUND = 0.45359237
+internal const val UK_GALLON = 4.54609
+internal const val US_GALLON = 3.785411784
 
 /** Temperature's base unit is Celsius. */
 const val ABSOLUTE_ZERO_C = -273.15
@@ -87,7 +89,7 @@ enum class UnitCategory(val title: String, val units: List<UnitDef>, val default
             linear("tbsp", "Tablespoons", "tbsp", 0.015),
             linear("floz_uk", "Fluid ounces (UK)", "fl oz (UK)", UK_GALLON / 160),
             linear("floz_us", "Fluid ounces (US)", "fl oz (US)", US_GALLON / 128),
-            linear("cup_uk", "Cups (UK metric)", "cup (UK)", 0.25),
+            linear("cup_uk", "Cups (metric)", "cup (metric)", 0.25),
             linear("cup_us", "Cups (US)", "cup (US)", US_GALLON / 16),
             linear("pt_uk", "Pints (UK)", "pt (UK)", UK_GALLON / 8),
             linear("pt_us", "Pints (US)", "pt (US)", US_GALLON / 8),
@@ -97,6 +99,7 @@ enum class UnitCategory(val title: String, val units: List<UnitDef>, val default
         ),
         "l", "pt_uk",
     ),
+    Cooking("Cooking", COOKING_UNITS, "cup_us", "g"),
     Area(
         "Area",
         listOf(
