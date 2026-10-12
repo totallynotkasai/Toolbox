@@ -30,15 +30,16 @@ The microphone (Tuner, Sound Meter) and physical activity (Step Counter) are ask
 
 ## Building
 
-Requires JDK 17–21 and the Android SDK. Open the folder in Android Studio and press Run, or:
+Requires JDK 17 or newer and the Android SDK; the JDK bundled with Android Studio works. Open the folder in Android Studio and press Run, or:
 
 ```bash
 ./gradlew assembleDebug        # APK in app/build/outputs/apk/debug/
 ./gradlew installDebug         # install on a connected phone or emulator
 ./gradlew testDebugUnitTest    # unit tests
+./gradlew lintDebug            # lint
 ```
 
-Gradle 8.13 doesn't run on Java 25, which recent Android Studio versions bundle; from a terminal, point `JAVA_HOME` at JDK 17–21.
+GitHub Actions runs the unit tests and lint on every pull request.
 
 Built with Kotlin, Jetpack Compose and Material 3 (dynamic colour on Android 12+). Pitch detection, audio synthesis, the coin and dice physics and the game AIs are all written in the app.
 

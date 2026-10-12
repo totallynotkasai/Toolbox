@@ -61,7 +61,7 @@ fun ToolScaffold(
                     LocalToolRoute.current?.let { FavouriteButton(it) }
                     actions()
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ),
             )

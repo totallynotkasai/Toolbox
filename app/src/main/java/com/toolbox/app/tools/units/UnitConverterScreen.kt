@@ -1,5 +1,6 @@
 package com.toolbox.app.tools.units
 
+import android.content.ClipData
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -35,7 +36,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -45,13 +46,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -59,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.common.rememberPref
+import kotlinx.coroutines.launch
 
 private const val ALLOWED_INPUT = "0123456789.,-eE "
 
@@ -218,7 +221,8 @@ private fun ConversionSide(
     onText: (String) -> Unit,
 ) {
     val context = LocalContext.current
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
     var expanded by remember { mutableStateOf(false) }
 
     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
@@ -231,7 +235,7 @@ private fun ConversionSide(
                     singleLine = true,
                     label = { Text(label) },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                    modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+                    modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
                 )
                 ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                     units.forEach { u ->
@@ -269,7 +273,7 @@ private fun ConversionSide(
                         IconButton(
                             enabled = text.isNotBlank() && !isError,
                             onClick = {
-                                clipboard.setText(AnnotatedString(text))
+                                scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(unit.name, text))) }
                                 Toast.makeText(context, "Copied $text ${unit.symbol}", Toast.LENGTH_SHORT).show()
                             },
                         ) { Icon(Icons.Filled.ContentCopy, contentDescription = "Copy value") }

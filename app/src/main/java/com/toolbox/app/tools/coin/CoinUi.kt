@@ -11,6 +11,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -22,12 +23,14 @@ import com.toolbox.app.ui.common.rememberPref
 @Composable
 fun rememberCoinStats(key: String): MutableState<CoinStats> {
     val pref = rememberPref(key, "")
-    return object : MutableState<CoinStats> {
-        override var value: CoinStats
-            get() = CoinStats.decode(pref.value)
-            set(v) { pref.value = v.encode() }
-        override fun component1() = value
-        override fun component2(): (CoinStats) -> Unit = { value = it }
+    return remember(pref) {
+        object : MutableState<CoinStats> {
+            override var value: CoinStats
+                get() = CoinStats.decode(pref.value)
+                set(v) { pref.value = v.encode() }
+            override fun component1() = value
+            override fun component2(): (CoinStats) -> Unit = { value = it }
+        }
     }
 }
 
