@@ -4,15 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Toolbox for Android</title>
-<meta name="description" content="Toolbox: 42 everyday tools, fidget toys and mini-games in one small Android app. No ads, no tracking, no third-party libraries.">
+<meta name="description" content="Toolbox: 40 everyday tools, fidget toys and mini-games in one small Android app. No ads, no tracking, no third-party libraries.">
 <meta property="og:title" content="Toolbox for Android">
-<meta property="og:description" content="42 everyday tools, fidget toys and mini-games in one small, ad-free Android app.">
+<meta property="og:description" content="40 everyday tools, fidget toys and mini-games in one small, ad-free Android app.">
 <meta name="theme-color" content="#1A73E8">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wght@8..144,400;8..144,500;8..144,700&display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,1,0&display=block" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0..1,0&display=block" rel="stylesheet">
 <style>
 :root {
   --bg: #ffffff;
@@ -26,6 +26,8 @@
   --primary-container: #d3e3fd;
   --on-primary-container: #041e49;
   --blue: #1a73e8; --red: #ea4335; --yellow: #fbbc04; --green: #34a853;
+  /* The app's light-mode tones for accents drawn as icons (GoogleColors.ink): the bright ones are too pale on white. */
+  --blue-ink: #1a73e8; --red-ink: #d93025; --yellow-ink: #b05a00; --green-ink: #188038;
   --shadow: 0 1px 3px rgba(0,0,0,.08), 0 8px 24px rgba(0,0,0,.06);
 }
 @media (prefers-color-scheme: dark) {
@@ -40,6 +42,7 @@
     --on-primary: #062e6f;
     --primary-container: #0842a0;
     --on-primary-container: #d3e3fd;
+    --blue-ink: var(--blue); --red-ink: var(--red); --yellow-ink: var(--yellow); --green-ink: var(--green);
     --shadow: 0 1px 3px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
   }
 }
@@ -59,8 +62,16 @@ a { color: var(--primary); }
   font-weight: normal; font-style: normal; line-height: 1;
   letter-spacing: normal; text-transform: none; white-space: nowrap;
   font-feature-settings: "liga"; -webkit-font-feature-settings: "liga";
-  display: inline-block; font-size: 24px;
+  display: inline-block; font-size: 24px; font-variation-settings: "FILL" 1;
 }
+
+/* Tool icons: the app's own icons from icons/, drawn as masks so they take the tile's colour, as on the home grid. */
+.c-blue { --acc: var(--blue); --ink: var(--blue-ink); }
+.c-red { --acc: var(--red); --ink: var(--red-ink); }
+.c-yellow { --acc: var(--yellow); --ink: var(--yellow-ink); }
+.c-green { --acc: var(--green); --ink: var(--green-ink); }
+.ic { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--acc) 16%, transparent); }
+.ic::before, .glyph { content: ""; display: block; width: 24px; height: 24px; background: var(--ink, currentColor); -webkit-mask: var(--i) center / contain no-repeat; mask: var(--i) center / contain no-repeat; }
 
 /* Nav */
 nav { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--outline); }
@@ -89,18 +100,23 @@ h1 .dots i { width: 12px; height: 12px; border-radius: 50%; display: block; }
 .btn.tonal:hover { background: var(--surface-high); }
 .fine { color: var(--text-2); font-size: 14px; margin-top: 14px; }
 
-/* Phone mockup */
+/* Phone mock-up of the home screen: two columns of tiles, as in the app */
 .phone { justify-self: center; width: 300px; max-width: 100%; aspect-ratio: 9 / 19; border-radius: 40px; background: #1f1f1f; padding: 10px; box-shadow: var(--shadow), 0 30px 60px rgba(26,115,232,.18); }
-.screen { height: 100%; border-radius: 31px; background: var(--bg); overflow: hidden; padding: 30px 14px 14px; display: flex; flex-direction: column; gap: 10px; }
-.screen .search { background: var(--surface); border-radius: 999px; padding: 9px 14px; font-size: 13px; color: var(--text-2); display: flex; align-items: center; gap: 8px; }
-.screen .search .ms { font-size: 18px; }
-.screen .chips { display: flex; gap: 6px; overflow: hidden; }
-.screen .chip { flex: none; font-size: 11px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--outline); color: var(--text-2); }
+.screen { height: 100%; border-radius: 31px; background: var(--bg); overflow: hidden; padding: 16px 14px 14px; display: flex; flex-direction: column; gap: 9px; }
+.screen .top { display: flex; justify-content: flex-end; color: var(--text-2); }
+.screen .top .ms { font-size: 18px; }
+.screen .name { font-size: 22px; line-height: 1; margin: 2px 2px 4px; }
+.screen .search { background: var(--surface); border-radius: 999px; padding: 8px 12px; font-size: 12px; color: var(--text-2); display: flex; align-items: center; gap: 8px; }
+.screen .search .ms { font-size: 17px; }
+.screen .chips { display: flex; gap: 5px; overflow: hidden; }
+.screen .chip { flex: none; font-size: 10.5px; padding: 3px 9px; border-radius: 7px; border: 1px solid var(--outline); color: var(--text-2); }
 .screen .chip.on { background: var(--primary-container); border-color: transparent; color: var(--on-primary-container); }
-.screen h4 { margin: 4px 2px 0; font-size: 12px; font-weight: 500; color: var(--primary); }
-.screen .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
-.screen .t { background: var(--surface); border-radius: 14px; padding: 10px 4px 8px; display: flex; flex-direction: column; align-items: center; gap: 5px; font-size: 9.5px; text-align: center; line-height: 1.15; }
-.screen .t .ms { font-size: 18px; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; color: #fff; }
+.screen h4 { margin: 4px 2px 0; font-size: 13px; font-weight: 500; color: var(--primary); }
+.screen .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.screen .t { background: var(--surface); border-radius: 14px; padding: 9px 9px 10px; font-size: 11.5px; font-weight: 500; line-height: 1.2; position: relative; }
+.screen .t .ic { width: 30px; height: 30px; margin-bottom: 12px; }
+.screen .t .ic::before { width: 17px; height: 17px; }
+.screen .t .ms { position: absolute; top: 8px; right: 8px; font-size: 15px; color: var(--outline); font-variation-settings: "FILL" 0; }
 
 /* Stats */
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 0 0 72px; }
@@ -114,6 +130,16 @@ section { padding: 24px 0 64px; }
 h2 { font-size: clamp(28px, 4vw, 38px); letter-spacing: -.01em; margin: 0 0 8px; line-height: 1.2; }
 .sub { color: var(--text-2); margin: 0 0 32px; font-size: 17px; max-width: 42em; }
 
+/* Screenshots */
+.shots { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+.shots figure { margin: 0; }
+.shots img { width: 100%; height: auto; display: block; border-radius: 18px; border: 1px solid var(--outline); background: var(--surface); }
+.shots figcaption { color: var(--text-2); font-size: 14px; text-align: center; margin-top: 8px; }
+@media (max-width: 860px) {
+  .shots { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 46%; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 8px; }
+  .shots figure { scroll-snap-align: start; }
+}
+
 .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 28px; }
 .filters button { font: inherit; font-size: 14px; font-weight: 500; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--outline); background: transparent; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
 .filters button[aria-pressed="true"] { background: var(--primary-container); border-color: transparent; color: var(--on-primary-container); }
@@ -121,15 +147,12 @@ h2 { font-size: clamp(28px, 4vw, 38px); letter-spacing: -.01em; margin: 0 0 8px;
 
 .cat { margin-bottom: 36px; }
 .cat h3 { display: flex; align-items: center; gap: 10px; font-size: 20px; margin: 0 0 4px; }
-.cat h3 .ms { color: var(--primary); }
+.cat h3 .ms, .cat h3 .glyph { color: var(--primary); }
 .cat > p { color: var(--text-2); margin: 0 0 16px; font-size: 15px; }
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .tile { background: var(--surface); border-radius: 20px; padding: 16px; display: flex; gap: 14px; align-items: flex-start; }
-.tile .ic { flex: none; width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; color: #fff; }
-.tile .ic .ms { font-size: 22px; }
 .tile b { display: block; font-weight: 500; font-size: 16px; line-height: 1.3; }
 .tile span { display: block; color: var(--text-2); font-size: 13.5px; line-height: 1.45; margin-top: 3px; }
-.c-blue { background: var(--blue); } .c-red { background: var(--red); } .c-yellow { background: #e37400; } .c-green { background: var(--green); }
 
 /* Features */
 .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
@@ -145,6 +168,7 @@ h2 { font-size: clamp(28px, 4vw, 38px); letter-spacing: -.01em; margin: 0 0 8px;
 @media (max-width: 760px) { .install { grid-template-columns: 1fr; padding: 24px; } }
 .install ol { margin: 0; padding-left: 22px; }
 .install li { margin-bottom: 10px; }
+.note { border-left: 3px solid var(--primary); padding: 2px 0 2px 12px; color: var(--text-2); font-size: 14px; margin: 16px 0 0; }
 pre { background: var(--bg); border: 1px solid var(--outline); border-radius: 14px; padding: 14px 16px; overflow-x: auto; font: 13.5px/1.6 ui-monospace, "Cascadia Code", Consolas, monospace; margin: 12px 0 0; }
 code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: .92em; }
 
@@ -171,38 +195,33 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space
     <div>
       <span class="eyebrow"><span class="ms" style="font-size:18px">android</span>Android 8.0 and up</span>
       <h1>Toolbox<span class="dots"><i style="background:var(--blue)"></i><i style="background:var(--red)"></i><i style="background:var(--yellow)"></i><i style="background:var(--green)"></i></span></h1>
-      <p class="lede">Flip a coin, tune a guitar, time an egg, pop some bubble wrap, or beat a friend at Connect Four. Dozens of small everyday tools, fidget toys and games in one tidy, ad-free app.</p>
+      <p class="lede">Flip a coin, tune a guitar, time an egg, pop some bubble wrap, or beat a friend at Connect Four. Forty small everyday tools, fidget toys and games in one tidy, ad-free app.</p>
       <div class="cta">
         <a class="btn primary" href="https://github.com/totallynotkasai/Toolbox/releases/latest"><span class="ms">download</span>Download APK</a>
         <a class="btn tonal" href="https://github.com/totallynotkasai/Toolbox"><span class="ms">code</span>View source</a>
       </div>
-      <p class="fine">Free and offline. No ads, no accounts, no tracking.</p>
+      <p class="fine">Free and offline. No ads, no accounts, no tracking. <a href="https://github.com/totallynotkasai/Toolbox/blob/main/CHANGELOG.md">What’s new in 1.1.0</a></p>
     </div>
 
     <div class="phone" aria-hidden="true">
       <div class="screen">
+        <div class="top"><span class="ms">settings</span></div>
+        <div class="name">Toolbox</div>
         <div class="search"><span class="ms">search</span>Search tools and games</div>
-        <div class="chips"><span class="chip on">All</span><span class="chip">Favourites</span><span class="chip">Decision Making</span><span class="chip">Time</span></div>
-        <h4>Favourites</h4>
-        <div class="grid">
-          <div class="t"><span class="ms c-blue">paid</span>Flip a Coin</div>
-          <div class="t"><span class="ms c-green">music_note</span>Tuner</div>
-          <div class="t"><span class="ms c-red">timer</span>Timer</div>
-        </div>
+        <div class="chips"><span class="chip on">All</span><span class="chip">Favourites</span><span class="chip">Decision Making</span><span class="chip">Measurements</span></div>
         <h4>Decision Making</h4>
         <div class="grid">
-          <div class="t"><span class="ms c-blue">casino</span>Roll a Die</div>
-          <div class="t"><span class="ms c-yellow">donut_large</span>Spinner</div>
-          <div class="t"><span class="ms c-red">tag</span>Random Number</div>
-          <div class="t"><span class="ms c-green">groups</span>Team Splitter</div>
-          <div class="t"><span class="ms c-blue">help</span>Magic 8-Ball</div>
-          <div class="t"><span class="ms c-yellow">sports_handball</span>Coin Toss</div>
+          <div class="t"><span class="ic c-yellow" style="--i:url(icons/coin.svg)"></span><span class="ms">star</span>Coin</div>
+          <div class="t"><span class="ic c-green" style="--i:url(icons/dice.svg)"></span><span class="ms">star</span>Dice</div>
+          <div class="t"><span class="ic c-red" style="--i:url(icons/eightball.svg)"></span><span class="ms">star</span>Magic 8-Ball</div>
+          <div class="t"><span class="ic c-blue" style="--i:url(icons/random.svg)"></span><span class="ms">star</span>Random Number</div>
+          <div class="t"><span class="ic c-green" style="--i:url(icons/spinner.svg)"></span><span class="ms">star</span>Spinner</div>
+          <div class="t"><span class="ic c-yellow" style="--i:url(icons/teams.svg)"></span><span class="ms">star</span>Team Splitter</div>
         </div>
         <h4>Measurements</h4>
         <div class="grid">
-          <div class="t"><span class="ms c-green">explore</span>Compass</div>
-          <div class="t"><span class="ms c-red">graphic_eq</span>Sound Meter</div>
-          <div class="t"><span class="ms c-blue">straighten</span>Bubble Level</div>
+          <div class="t"><span class="ic c-green" style="--i:url(icons/level.svg)"></span><span class="ms">star</span>Bubble Level</div>
+          <div class="t"><span class="ic c-red" style="--i:url(icons/calculator.svg)"></span><span class="ms">star</span>Calculator</div>
         </div>
       </div>
     </div>
@@ -211,12 +230,26 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space
 
 <div class="wrap">
   <div class="stats">
-    <div class="stat"><b>42</b><span>tools, toys and games</span></div>
+    <div class="stat"><b>40</b><span>tools, toys and games</span></div>
     <div class="stat"><b>0</b><span>ads, trackers or accounts</span></div>
     <div class="stat"><b>0</b><span>third-party libraries</span></div>
     <div class="stat"><b>100%</b><span>works offline</span></div>
   </div>
 </div>
+
+<section id="screens">
+  <div class="wrap">
+    <h2>A look inside</h2>
+    <p class="sub">Material You throughout, with real physics for the coin and dice.</p>
+    <div class="shots">
+      <figure><img src="screenshots/home.png" width="540" height="1200" loading="lazy" alt="The home screen: search, category chips and a two-column tool grid"><figcaption>Home</figcaption></figure>
+      <figure><img src="screenshots/coin.png" width="540" height="1200" loading="lazy" alt="Coin in Throw mode, showing heads, the counts and the recent results"><figcaption>Coin</figcaption></figure>
+      <figure><img src="screenshots/dice.png" width="540" height="1200" loading="lazy" alt="Dice in Throw mode: three six-sided dice totalling 7"><figcaption>Dice</figcaption></figure>
+      <figure><img src="screenshots/connect-four.png" width="540" height="1200" loading="lazy" alt="Connect Four, won against the computer"><figcaption>Connect Four</figcaption></figure>
+      <figure><img src="screenshots/bubble-wrap.png" width="540" height="1200" loading="lazy" alt="Bubble Wrap with a third of the sheet popped"><figcaption>Bubble Wrap</figcaption></figure>
+    </div>
+  </div>
+</section>
 
 <section id="tools">
   <div class="wrap">
@@ -225,95 +258,103 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space
 
     <div class="filters" role="group" aria-label="Filter categories">
       <button aria-pressed="true" data-f="all">All</button>
-      <button aria-pressed="false" data-f="decide">Decision Making</button>
-      <button aria-pressed="false" data-f="measure">Measurements</button>
-      <button aria-pressed="false" data-f="time">Time</button>
-      <button aria-pressed="false" data-f="fidget">Fidget Toys</button>
-      <button aria-pressed="false" data-f="solo">Solo Games</button>
-      <button aria-pressed="false" data-f="duo">Duo Games</button>
+      <button aria-pressed="false" data-f="Decisions">Decision Making</button>
+      <button aria-pressed="false" data-f="Measurements">Measurements</button>
+      <button aria-pressed="false" data-f="Time">Time</button>
+      <button aria-pressed="false" data-f="Toys">Fidget Toys</button>
+      <button aria-pressed="false" data-f="Calm">Calm</button>
+      <button aria-pressed="false" data-f="Solo">Solo Games</button>
+      <button aria-pressed="false" data-f="Duo">Duo Games</button>
     </div>
 
-    <div class="cat" data-c="decide">
+    <!-- The tiles below follow Tools.kt: the same categories, titles, colours and icons, in the app's order.
+         WebsiteTest checks them, so update this list when a tool changes. -->
+    <div class="cat" data-c="Decisions">
       <h3><span class="ms">casino</span>Decision Making</h3>
-      <p>Shake your phone to decide: works on the coins, dice, spinner, random number, 8-ball and team splitter.</p>
+      <p>Shake your phone to decide: it works on all six.</p>
       <div class="tiles">
-        <div class="tile"><span class="ic c-blue"><span class="ms">paid</span></span><div><b>Flip a Coin</b><span>Embossed 3D coin, with streaks and history.</span></div></div>
-        <div class="tile"><span class="ic c-yellow"><span class="ms">sports_handball</span></span><div><b>Coin Toss</b><span>Real physics: swipe or shake harder to throw higher.</span></div></div>
-        <div class="tile"><span class="ic c-red"><span class="ms">casino</span></span><div><b>Roll a Die</b><span>d4 to d20, up to six dice at once.</span></div></div>
-        <div class="tile"><span class="ic c-green"><span class="ms">view_in_ar</span></span><div><b>Dice Toss</b><span>One to five rigid-body dice thrown across a walled table.</span></div></div>
-        <div class="tile"><span class="ic c-yellow"><span class="ms">donut_large</span></span><div><b>Spinner</b><span>A spinning number wheel.</span></div></div>
-        <div class="tile"><span class="ic c-blue"><span class="ms">tag</span></span><div><b>Random Number</b><span>Pick any number in a range.</span></div></div>
-        <div class="tile"><span class="ic c-red"><span class="ms">help</span></span><div><b>Magic 8-Ball</b><span>Ask a question, get a verdict.</span></div></div>
-        <div class="tile"><span class="ic c-green"><span class="ms">groups</span></span><div><b>Team Splitter</b><span>Split by team count or team size, then share as text.</span></div></div>
+        <div class="tile" data-tool="coin"><span class="ic c-yellow" style="--i:url(icons/coin.svg)"></span><div><b>Coin</b><span>Quick flip, or Throw: a physics coin you swipe or flick. Keeps counts and streaks.</span></div></div>
+        <div class="tile" data-tool="dice"><span class="ic c-green" style="--i:url(icons/dice.svg)"></span><div><b>Dice</b><span>d4 to d20, up to six at once. Quick roll, or throw them across a walled table.</span></div></div>
+        <div class="tile" data-tool="eightball"><span class="ic c-red" style="--i:url(icons/eightball.svg)"></span><div><b>Magic 8-Ball</b><span>Ask a question and shake for one of the 20 classic answers.</span></div></div>
+        <div class="tile" data-tool="random"><span class="ic c-blue" style="--i:url(icons/random.svg)"></span><div><b>Random Number</b><span>Any whole number in a range, negatives included.</span></div></div>
+        <div class="tile" data-tool="spinner"><span class="ic c-green" style="--i:url(icons/spinner.svg)"></span><div><b>Spinner</b><span>A wheel of up to 20 of your own options. A flick always turns it at least twice, so it can’t be aimed.</span></div></div>
+        <div class="tile" data-tool="teams"><span class="ic c-yellow" style="--i:url(icons/teams.svg)"></span><div><b>Team Splitter</b><span>Split up to 60 names by team count or team size, then share the teams as text.</span></div></div>
       </div>
     </div>
 
-    <div class="cat" data-c="measure">
+    <div class="cat" data-c="Measurements">
       <h3><span class="ms">straighten</span>Measurements</h3>
       <p>Uses your phone’s sensors and microphone. Permissions are only asked for when you open a screen that needs them.</p>
       <div class="tiles">
-        <div class="tile"><span class="ic c-blue"><span class="ms">horizontal_rule</span></span><div><b>Bubble Level</b><span>A spirit level for shelves and pictures.</span></div></div>
-        <div class="tile"><span class="ic c-green"><span class="ms">explore</span></span><div><b>Compass</b><span>Magnetic, with calibration, interference warnings and a marked bearing.</span></div></div>
-        <div class="tile"><span class="ic c-red"><span class="ms">graphic_eq</span></span><div><b>Sound Meter</b><span>dB gauge with min, average, max and 30 s history.</span></div></div>
-        <div class="tile"><span class="ic c-yellow"><span class="ms">directions_walk</span></span><div><b>Step Counter</b><span>Goal ring, distance, calories and a 7-day chart.</span></div></div>
-        <div class="tile"><span class="ic c-blue"><span class="ms">exposure_plus_1</span></span><div><b>Tally Counter</b><span>Tap to count anything.</span></div></div>
-        <div class="tile"><span class="ic c-green"><span class="ms">swap_horiz</span></span><div><b>Unit Converter</b><span>Ten categories, UK and US measures.</span></div></div>
-        <div class="tile"><span class="ic c-red"><span class="ms">calculate</span></span><div><b>Calculator</b><span>Brackets, percentages, live preview and exact decimals.</span></div></div>
-        <div class="tile"><span class="ic c-yellow"><span class="ms">music_note</span></span><div><b>Tuner</b><span>Chromatic, guitar, bass, ukulele and violin.</span></div></div>
+        <div class="tile" data-tool="level"><span class="ic c-green" style="--i:url(icons/level.svg)"></span><div><b>Bubble Level</b><span>Tilt on both axes to 0.1°, which edge is high, and “Set as level” for a phone that doesn’t sit flat.</span></div></div>
+        <div class="tile" data-tool="calculator"><span class="ic c-red" style="--i:url(icons/calculator.svg)"></span><div><b>Calculator</b><span>Brackets, phone-style percentages, a live preview and exact decimals. Turns with the phone.</span></div></div>
+        <div class="tile" data-tool="compass"><span class="ic c-red" style="--i:url(icons/compass.svg)"></span><div><b>Compass</b><span>Magnetic, with calibration and interference warnings and a marked bearing to follow.</span></div></div>
+        <div class="tile" data-tool="soundmeter"><span class="ic c-yellow" style="--i:url(icons/soundmeter.svg)"></span><div><b>Sound Meter</b><span>Approximate dB with min, average, max and 30 s of history. Calibrate it to your phone’s mic.</span></div></div>
+        <div class="tile" data-tool="steps"><span class="ic c-blue" style="--i:url(icons/steps.svg)"></span><div><b>Step Counter</b><span>Counts from midnight even with the app closed. Goal ring, distance, calories and a 7-day chart.</span></div></div>
+        <div class="tile" data-tool="counter"><span class="ic c-blue" style="--i:url(icons/counter.svg)"></span><div><b>Tally Counter</b><span>Tap to count anything, with undo after a reset.</span></div></div>
+        <div class="tile" data-tool="tuner"><span class="ic c-blue" style="--i:url(icons/tuner.svg)"></span><div><b>Tuner</b><span>Chromatic, guitar, bass, ukulele and violin, with a needle in cents.</span></div></div>
+        <div class="tile" data-tool="units"><span class="ic c-green" style="--i:url(icons/units.svg)"></span><div><b>Unit Converter</b><span>Ten categories, with UK and US pints, gallons, tons and mpg.</span></div></div>
       </div>
     </div>
 
-    <div class="cat" data-c="time">
+    <div class="cat" data-c="Time">
       <h3><span class="ms">schedule</span>Time</h3>
       <p>Clocks and counters for the kitchen, the gym and the practice room.</p>
       <div class="tiles">
-        <div class="tile"><span class="ic c-blue"><span class="ms">calendar_month</span></span><div><b>Date Calculator</b><span>Days between dates, add or subtract, and age.</span></div></div>
-        <div class="tile"><span class="ic c-red"><span class="ms">timer</span></span><div><b>Timer</b><span>Countdown with an alarm.</span></div></div>
-        <div class="tile"><span class="ic c-green"><span class="ms">avg_pace</span></span><div><b>Stopwatch</b><span>With laps.</span></div></div>
-        <div class="tile"><span class="ic c-yellow"><span class="ms">metronome</span></span><div><b>Metronome</b><span>Tap tempo and accents.</span></div></div>
+        <div class="tile" data-tool="dates"><span class="ic c-red" style="--i:url(icons/dates.svg)"></span><div><b>Date Calculator</b><span>Days and working days between dates, adding and subtracting, and age.</span></div></div>
+        <div class="tile" data-tool="metronome"><span class="ic c-red" style="--i:url(icons/metronome.svg)"></span><div><b>Metronome</b><span>30 to 250 BPM, tap tempo, time signatures and an accent on the first beat.</span></div></div>
+        <div class="tile" data-tool="stopwatch"><span class="ic c-red" style="--i:url(icons/stopwatch.svg)"></span><div><b>Stopwatch</b><span>Hundredths of a second, with laps and an optional keep-screen-on.</span></div></div>
+        <div class="tile" data-tool="timer"><span class="ic c-yellow" style="--i:url(icons/timer.svg)"></span><div><b>Timer</b><span>A real alarm: it rings on time with the phone asleep, at alarm volume, until you stop it. Countdown in the notifications.</span></div></div>
       </div>
     </div>
 
-    <div class="cat" data-c="fidget">
-      <h3><span class="ms">spa</span>Fidget Toys</h3>
-      <p>Satisfying sounds and vibration, with one shared vibration switch.</p>
+    <div class="cat" data-c="Toys">
+      <h3><span class="ms">toys</span>Fidget Toys</h3>
+      <p>Satisfying sounds and vibration, with one vibration switch for the whole app.</p>
       <div class="tiles">
-        <div class="tile"><span class="ic c-green"><span class="ms">self_improvement</span></span><div><b>Meditate</b><span>Guided breathing with a steady vibration while you breathe in.</span></div></div>
-        <div class="tile"><span class="ic c-blue"><span class="ms">cyclone</span></span><div><b>Fidget Spinner</b><span>Flick it and watch it go.</span></div></div>
-        <div class="tile"><span class="ic c-red"><span class="ms">bubble_chart</span></span><div><b>Bubble Wrap</b><span>Pop, pop, pop.</span></div></div>
-        <div class="tile"><span class="ic c-yellow"><span class="ms">toggle_on</span></span><div><b>Clicky Switches</b><span>Mechanical clicks on demand.</span></div></div>
-        <div class="tile"><span class="ic c-blue"><span class="ms">dialpad</span></span><div><b>Rotary Dial</b><span>An old-school phone dial.</span></div></div>
-        <div class="tile"><span class="ic c-green"><span class="ms">pets</span></span><div><b>Purring Cat</b><span>Stroke to make it purr.</span></div></div>
-        <div class="tile"><span class="ic c-yellow"><span class="ms">water_drop</span></span><div><b>Rain Stick</b><span>Tilt to hear the rain.</span></div></div>
-        <div class="tile"><span class="ic c-red"><span class="ms">unfold_more</span></span><div><b>Zip &amp; Ratchet</b><span>Zip it up, crank it down.</span></div></div>
+        <div class="tile" data-tool="bubblewrap"><span class="ic c-green" style="--i:url(icons/bubblewrap.svg)"></span><div><b>Bubble Wrap</b><span>Pop, pop, pop. Some bubbles are stubborn.</span></div></div>
+        <div class="tile" data-tool="switches"><span class="ic c-red" style="--i:url(icons/switches.svg)"></span><div><b>Clicky Switches</b><span>A toggle, rocker, arcade button, clicky pen and notched slider.</span></div></div>
+        <div class="tile" data-tool="fidget"><span class="ic c-blue" style="--i:url(icons/fidget.svg)"></span><div><b>Fidget Spinner</b><span>Flick it up to 1,200 RPM, or rest a finger on it to brake.</span></div></div>
+        <div class="tile" data-tool="cat"><span class="ic c-yellow" style="--i:url(icons/cat.svg)"></span><div><b>Purring Cat</b><span>Stroke from head to tail to make it purr. Not the other way.</span></div></div>
+        <div class="tile" data-tool="rainstick"><span class="ic c-green" style="--i:url(icons/rainstick.svg)"></span><div><b>Rain Stick</b><span>Tilt the phone to pour 200 grains past the pegs.</span></div></div>
+        <div class="tile" data-tool="dial"><span class="ic c-yellow" style="--i:url(icons/dial.svg)"></span><div><b>Rotary Dial</b><span>Fine clicks, chunky detents, or a free spin.</span></div></div>
+        <div class="tile" data-tool="zip"><span class="ic c-blue" style="--i:url(icons/zip.svg)"></span><div><b>Zip &amp; Ratchet</b><span>Zip it up, crank it down.</span></div></div>
       </div>
     </div>
 
-    <div class="cat" data-c="solo">
+    <div class="cat" data-c="Calm">
+      <h3><span class="glyph" style="--i:url(icons/meditate.svg)"></span>Calm</h3>
+      <p>Slow down for a minute.</p>
+      <div class="tiles">
+        <div class="tile" data-tool="meditate"><span class="ic c-green" style="--i:url(icons/meditate.svg)"></span><div><b>Meditate</b><span>Guided breathing in three patterns, for 1 to 10 minutes, with a gentle vibration while you breathe in.</span></div></div>
+      </div>
+    </div>
+
+    <div class="cat" data-c="Solo">
       <h3><span class="ms">sports_esports</span>Solo Games</h3>
-      <p>Quick games with saved high scores.</p>
+      <p>Quick games with saved best scores. They pause when you leave.</p>
       <div class="tiles">
-        <div class="tile"><span class="ic c-green"><span class="ms">gesture</span></span><div><b>Snake</b><span>The classic.</span></div></div>
-        <div class="tile"><span class="ic c-red"><span class="ms">view_module</span></span><div><b>Block Breaker</b><span>Paddle, ball, bricks.</span></div></div>
-        <div class="tile"><span class="ic c-yellow"><span class="ms">bolt</span></span><div><b>Reaction Time</b><span>Tap the moment it changes.</span></div></div>
-        <div class="tile"><span class="ic c-blue"><span class="ms">grid_view</span></span><div><b>Simon</b><span>Repeat the growing pattern.</span></div></div>
-        <div class="tile"><span class="ic c-red"><span class="ms">style</span></span><div><b>Memory Game</b><span>Find the matching pairs.</span></div></div>
-        <div class="tile"><span class="ic c-yellow"><span class="ms">apps</span></span><div><b>2048</b><span>Slide and merge the tiles.</span></div></div>
-        <div class="tile"><span class="ic c-blue"><span class="ms">lightbulb</span></span><div><b>Lights Out</b><span>With hints and par.</span></div></div>
-        <div class="tile"><span class="ic c-green"><span class="ms">stacks</span></span><div><b>Stack Tower</b><span>Overhangs are sliced off; perfect drops regrow the block.</span></div></div>
+        <div class="tile" data-tool="2048"><span class="ic c-yellow" style="--i:url(icons/2048.svg)"></span><div><b>2048</b><span>Slide and merge the tiles, and keep going past 2048.</span></div></div>
+        <div class="tile" data-tool="breaker"><span class="ic c-blue" style="--i:url(icons/breaker.svg)"></span><div><b>Block Breaker</b><span>Classic, or Action with steel and explosive bricks and power-ups.</span></div></div>
+        <div class="tile" data-tool="lightsout"><span class="ic c-green" style="--i:url(icons/lightsout.svg)"></span><div><b>Lights Out</b><span>Every puzzle has a par to beat, and hints if you’re stuck.</span></div></div>
+        <div class="tile" data-tool="memory"><span class="ic c-yellow" style="--i:url(icons/memory.svg)"></span><div><b>Memory Game</b><span>Find the eight pairs in as few moves as you can.</span></div></div>
+        <div class="tile" data-tool="reaction"><span class="ic c-red" style="--i:url(icons/reaction.svg)"></span><div><b>Reaction Time</b><span>Five rounds: tap the moment it turns green.</span></div></div>
+        <div class="tile" data-tool="simon"><span class="ic c-yellow" style="--i:url(icons/simon.svg)"></span><div><b>Simon</b><span>Repeat the growing pattern, with the original tones.</span></div></div>
+        <div class="tile" data-tool="snake"><span class="ic c-green" style="--i:url(icons/snake.svg)"></span><div><b>Snake</b><span>The classic, with wrap-around edges. Fill the board to win.</span></div></div>
+        <div class="tile" data-tool="stack"><span class="ic c-red" style="--i:url(icons/stack.svg)"></span><div><b>Stack Tower</b><span>Overhangs are sliced off; perfect drops regrow the block.</span></div></div>
       </div>
     </div>
 
-    <div class="cat" data-c="duo">
+    <div class="cat" data-c="Duo">
       <h3><span class="ms">group</span>Duo Games</h3>
-      <p>Play against the computer, or pass the phone to a friend.</p>
+      <p>Every one can be played against the computer or with a friend on the same phone, with a saved tally for each.</p>
       <div class="tiles">
-        <div class="tile"><span class="ic c-blue"><span class="ms">ac_unit</span></span><div><b>Snowman</b><span>Hangman with a melting snowman instead of a gallows.</span></div></div>
-        <div class="tile"><span class="ic c-red"><span class="ms">tag</span></span><div><b>Tic-Tac-Toe</b><span>Solo or 2-player.</span></div></div>
-        <div class="tile"><span class="ic c-yellow"><span class="ms">radio_button_checked</span></span><div><b>Connect Four</b><span>Solo or 2-player.</span></div></div>
-        <div class="tile"><span class="ic c-green"><span class="ms">border_clear</span></span><div><b>Dots and Boxes</b><span>3×3 to 5×5 boards.</span></div></div>
-        <div class="tile"><span class="ic c-blue"><span class="ms">sports_hockey</span></span><div><b>Air Hockey</b><span>Two players on one screen with multi-touch.</span></div></div>
-        <div class="tile"><span class="ic c-red"><span class="ms">sailing</span></span><div><b>Battleships</b><span>Pass-and-play with a hand-off screen.</span></div></div>
+        <div class="tile" data-tool="airhockey"><span class="ic c-red" style="--i:url(icons/airhockey.svg)"></span><div><b>Air Hockey</b><span>First to seven, against the computer or a friend at the other end.</span></div></div>
+        <div class="tile" data-tool="battleships"><span class="ic c-blue" style="--i:url(icons/battleships.svg)"></span><div><b>Battleships</b><span>Place your fleet, then take on the computer, or pass the phone between turns.</span></div></div>
+        <div class="tile" data-tool="connectfour"><span class="ic c-blue" style="--i:url(icons/connectfour.svg)"></span><div><b>Connect Four</b><span>Four in a row, with undo.</span></div></div>
+        <div class="tile" data-tool="dotsboxes"><span class="ic c-green" style="--i:url(icons/dotsboxes.svg)"></span><div><b>Dots and Boxes</b><span>3×3 to 5×5 boards.</span></div></div>
+        <div class="tile" data-tool="hangman"><span class="ic c-blue" style="--i:url(icons/hangman.svg)"></span><div><b>Snowman</b><span>Hangman with a melting snowman instead of a gallows.</span></div></div>
+        <div class="tile" data-tool="tictactoe"><span class="ic c-red" style="--i:url(icons/tictactoe.svg)"></span><div><b>Tic-Tac-Toe</b><span>Noughts and crosses. Who goes first takes turns.</span></div></div>
       </div>
     </div>
   </div>
@@ -325,11 +366,11 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space
     <p class="sub">Toolbox is built in Kotlin and Jetpack Compose, styled after Google’s own search tools.</p>
     <div class="features">
       <div class="feature"><span class="ms">palette</span><h3>Material You</h3><p>Picks up your wallpaper colours on Android 12 and later, with light and dark themes.</p></div>
-      <div class="feature"><span class="ms">shield</span><h3>Nothing leaves your phone</h3><p>No internet permission, no analytics, no ads and no sign-in. Scores and settings stay on the device.</p></div>
+      <div class="feature"><span class="ms">shield</span><h3>Nothing leaves your phone</h3><p>No internet permission, no analytics, no ads and no sign-in. Scores and settings stay on the phone, and go only into your own Android backup if you use one. Step history is left out.</p></div>
       <div class="feature"><span class="ms">inventory_2</span><h3>No third-party code</h3><p>Pitch detection, audio synthesis, dice and coin physics and every game AI are written from scratch.</p></div>
-      <div class="feature"><span class="ms">vibration</span><h3>Shake to decide</h3><p>Shake your phone to flip, roll, spin or pick. Harder shakes throw the physics coin higher.</p></div>
-      <div class="feature"><span class="ms">star</span><h3>Favourites and search</h3><p>Star your go-to tools to pin them to the top, and filter by category with one tap.</p></div>
-      <div class="feature"><span class="ms">lock_open</span><h3>Permissions on demand</h3><p>Microphone and activity access are only requested when you open the tuner, sound meter or step counter.</p></div>
+      <div class="feature"><span class="ms">vibration</span><h3>Shake to decide</h3><p>Shake your phone to flip, roll, spin, ask, pick a number or reshuffle teams. Harder shakes throw higher.</p></div>
+      <div class="feature"><span class="ms">accessibility_new</span><h3>Works with TalkBack</h3><p>Every screen reads out properly and fits at large text sizes, and the turn-based games can be played with TalkBack.</p></div>
+      <div class="feature"><span class="ms">lock_open</span><h3>Permissions on demand</h3><p>Microphone and activity access are only asked for when you open a screen that needs them, and notifications when you first start a timer.</p></div>
     </div>
   </div>
 </section>
@@ -345,6 +386,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space
           <li>Tap <b>Install</b>, then find Toolbox in your app drawer.</li>
         </ol>
         <p class="fine">Needs Android 8.0 (Oreo) or later.</p>
+        <p class="note"><b>Upgrading from 1.0.0?</b> It was signed with a different key, so uninstall it first. Its scores and favourites can’t be carried over. Later versions update in place.</p>
       </div>
       <div>
         <h2>Build it yourself</h2>
@@ -359,7 +401,7 @@ cd Toolbox
 
 <footer>
   <div class="wrap">
-    <span>Toolbox · made by <a href="https://github.com/totallynotkasai">totallynotkasai</a></span>
+    <span>Toolbox · made by <a href="https://github.com/totallynotkasai">totallynotkasai</a> · tool icons include <a href="https://fonts.google.com/icons">Material Icons</a> (Apache 2.0)</span>
     <a href="https://github.com/totallynotkasai/Toolbox">Source on GitHub</a>
   </div>
 </footer>
