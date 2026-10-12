@@ -45,8 +45,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -67,7 +65,6 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -77,19 +74,15 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.repeatOnLifecycle
+import com.toolbox.app.ui.common.KeepScreenOn
+import com.toolbox.app.ui.common.MicEffect
 import com.toolbox.app.ui.common.MicPermissionGate
 import com.toolbox.app.ui.common.ToolScaffold
-import com.toolbox.app.ui.common.openMicRecord
-import com.toolbox.app.ui.common.readFully
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.common.rememberPref
 import com.toolbox.app.ui.common.supportsUnprocessedMic
 import com.toolbox.app.ui.theme.GoogleColors
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -139,7 +132,6 @@ fun SoundMeterScreen(onBack: () -> Unit) {
 private fun SoundMeterContent(calibrating: Boolean, onCalibrationDone: () -> Unit) {
     val context = LocalContext.current
     val haptics = rememberHaptics()
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
     var offset by rememberPref(PREF_OFFSET, DEFAULT_OFFSET)
     var running by rememberSaveable { mutableStateOf(true) }
     var micFailed by remember { mutableStateOf(false) }
@@ -155,45 +147,23 @@ private fun SoundMeterContent(calibrating: Boolean, onCalibrationDone: () -> Uni
 
     KeepScreenOn(running)
 
-    LaunchedEffect(running) {
-        if (!running) return@LaunchedEffect
-        // Only hold the mic while the app is on screen.
-        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            withContext(Dispatchers.Default) {
-                val sources = buildList {
-                    // UNPROCESSED skips AGC and noise suppression, which would flatten loud sounds and hide quiet ones.
-                    if (unprocessed) add(MediaRecorder.AudioSource.UNPROCESSED)
-                    add(MediaRecorder.AudioSource.VOICE_RECOGNITION)
-                    add(MediaRecorder.AudioSource.MIC)
-                }.toIntArray()
-                val record = openMicRecord(SAMPLE_RATE, BLOCK * 2, *sources)
-                if (record == null) {
-                    withContext(Dispatchers.Main) { micFailed = true }
-                    return@withContext
-                }
-                val buffer = ShortArray(BLOCK)
-                try {
-                    record.startRecording()
-                    while (isActive) {
-                        if (!record.readFully(buffer)) {
-                            if (isActive) withContext(Dispatchers.Main) { micFailed = true }
-                            break
-                        }
-                        val db = rmsDbfs(buffer)
-                        val now = SystemClock.uptimeMillis()
-                        withContext(Dispatchers.Main) {
-                            level = db
-                            stats.add(db)
-                            peakValue = peak.update(db, now)
-                            history = (if (history.size >= HISTORY_SIZE) history.copyOfRange(1, history.size) else history) + db
-                            tick++
-                        }
-                    }
-                } finally {
-                    record.stop()
-                    record.release()
-                }
-            }
+    val sources = remember(unprocessed) {
+        buildList {
+            // UNPROCESSED skips AGC and noise suppression, which would flatten loud sounds and hide quiet ones.
+            if (unprocessed) add(MediaRecorder.AudioSource.UNPROCESSED)
+            add(MediaRecorder.AudioSource.VOICE_RECOGNITION)
+            add(MediaRecorder.AudioSource.MIC)
+        }.toIntArray()
+    }
+    MicEffect(SAMPLE_RATE, BLOCK, sources, enabled = running, onError = { micFailed = true }) { buffer ->
+        val db = rmsDbfs(buffer)
+        val now = SystemClock.uptimeMillis()
+        withContext(Dispatchers.Main) {
+            level = db
+            stats.add(db)
+            peakValue = peak.update(db, now)
+            history = (if (history.size >= HISTORY_SIZE) history.copyOfRange(1, history.size) else history) + db
+            tick++
         }
     }
 
@@ -254,16 +224,6 @@ private fun SoundMeterContent(calibrating: Boolean, onCalibrationDone: () -> Uni
             onChange = { offset = it },
             onDismiss = onCalibrationDone,
         )
-    }
-}
-
-/** Keeps the display awake while [on], since a meter is usually watched rather than touched. */
-@Composable
-private fun KeepScreenOn(on: Boolean) {
-    val view = LocalView.current
-    DisposableEffect(view, on) {
-        view.keepScreenOn = on
-        onDispose { view.keepScreenOn = false }
     }
 }
 

@@ -1,6 +1,7 @@
 package com.toolbox.app.toys.cat
 
 import com.toolbox.app.ui.common.PcmStream
+import com.toolbox.app.ui.common.Svf
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.math.PI
 import kotlin.math.cos
@@ -143,16 +144,3 @@ internal class CatAudio : PcmStream("cat-audio") {
     }
 }
 
-/** Chamberlin state-variable filter, band-pass output; [damp] is 1/Q. */
-private class Svf(fc: Float, private val damp: Float) {
-    private val f = 2f * sin(PI.toFloat() * fc / PcmStream.SAMPLE_RATE)
-    private var low = 0f
-    private var bp = 0f
-
-    fun process(x: Float): Float {
-        low += f * bp
-        val high = x - low - damp * bp
-        bp += f * high
-        return bp
-    }
-}

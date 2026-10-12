@@ -30,7 +30,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleStartEffect
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
 import kotlinx.coroutines.launch
@@ -79,7 +79,14 @@ fun MetronomeScreen(onBack: () -> Unit) {
     engine.bpm = bpm
     engine.beatsPerBar = beats
     engine.accentFirstBeat = accent
-    DisposableEffect(Unit) { onDispose { engine.stop() } }
+    // Like every other sound in the app, it stops when you leave; it shows as stopped when you come back.
+    LifecycleStartEffect(engine) {
+        onStopOrDispose {
+            engine.stop()
+            playing = false
+            currentBeat = -1
+        }
+    }
 
     fun setBpm(v: Int) { bpm = v.coerceIn(MIN_BPM, MAX_BPM) }
     fun tap() {
