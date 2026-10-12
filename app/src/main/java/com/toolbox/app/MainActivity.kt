@@ -1,5 +1,6 @@
 package com.toolbox.app
 
+import android.content.pm.ActivityInfo
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -14,11 +15,13 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.toolbox.app.home.HomeScreen
 import com.toolbox.app.ui.common.LocalToolRoute
@@ -27,14 +30,34 @@ import com.toolbox.app.ui.theme.ToolboxTheme
 /** Debug start route that opens the home screen's Settings sheet instead of a tool. */
 private const val SETTINGS_ROUTE = "settings"
 
+/** Screens that follow the phone's auto-rotate setting; every other screen is portrait, as in the manifest. */
+private val FREE_ROTATION_ROUTES = setOf(Tool.Calculator.route)
+
+private const val FREE_ROTATION_KEY = "free_rotation"
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        // A Calculator recreated in landscape asks for free rotation again before its first frame, so the manifest's
+        // portrait lock doesn't turn it back upright while the navigation state is still being restored.
+        if (savedInstanceState?.getBoolean(FREE_ROTATION_KEY) == true) applyOrientation(free = true)
         setContent {
-            ToolboxTheme { ToolboxNavHost(debugStartRoute()) }
+            ToolboxTheme {
+                ToolboxNavHost(debugStartRoute(), onRouteShown = { applyOrientation(free = it in FREE_ROTATION_ROUTES) })
+            }
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(FREE_ROTATION_KEY, requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_FULL_USER)
+    }
+
+    private fun applyOrientation(free: Boolean) {
+        val wanted = if (free) ActivityInfo.SCREEN_ORIENTATION_FULL_USER else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        if (requestedOrientation != wanted) requestedOrientation = wanted
     }
 
     /**
@@ -48,13 +71,17 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun ToolboxNavHost(startRoute: String? = null) {
+private fun ToolboxNavHost(startRoute: String? = null, onRouteShown: (String) -> Unit = {}) {
     val nav = rememberNavController()
-    var startHandled by rememberSaveable { mutableStateOf(false) } // so rotation doesn't reopen it
+    var startHandled by rememberSaveable { mutableStateOf(false) } // so recreation doesn't reopen it
     LaunchedEffect(startRoute) {
         if (startRoute != null && startRoute != SETTINGS_ROUTE && !startHandled) nav.navigate(startRoute) { launchSingleTop = true }
         startHandled = true
     }
+    // The current entry changes as soon as back is pressed, so leaving the Calculator turns upright straight away.
+    val route = nav.currentBackStackEntryAsState().value?.destination?.route
+    val currentOnRouteShown by rememberUpdatedState(onRouteShown)
+    LaunchedEffect(route) { route?.let(currentOnRouteShown) }
     NavHost(
         navController = nav,
         startDestination = "home",

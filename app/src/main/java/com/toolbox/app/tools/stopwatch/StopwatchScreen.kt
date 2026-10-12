@@ -31,8 +31,11 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,6 +68,12 @@ fun StopwatchScreen(onBack: () -> Unit) {
     }
 }
 
+/** Lap times, newest first, saved as a LongArray so they survive the screen being recreated. */
+private val LapsSaver = Saver<SnapshotStateList<Long>, LongArray>(
+    save = { it.toLongArray() },
+    restore = { it.toList().toMutableStateList() },
+)
+
 private fun format(ms: Long, hundredths: Boolean): String {
     val total = ms / 1000
     val h = total / 3600; val m = (total / 60) % 60; val s = total % 60
@@ -78,7 +87,7 @@ private fun TimerPane() {
     var durationMs by rememberSaveable { mutableLongStateOf(5 * 60_000L) }
     var remainingMs by rememberSaveable { mutableLongStateOf(durationMs) }
     var running by rememberSaveable { mutableStateOf(false) }
-    var finished by remember { mutableStateOf(false) }
+    var finished by rememberSaveable { mutableStateOf(false) }
     val tone = remember { ToneGenerator(AudioManager.STREAM_ALARM, 90) }
     DisposableEffect(Unit) { onDispose { tone.release() } }
 
@@ -152,7 +161,7 @@ private fun StopwatchPane() {
     var accumulated by rememberSaveable { mutableLongStateOf(0L) }
     var startedAt by rememberSaveable { mutableLongStateOf(0L) }
     var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
-    val laps = remember { mutableStateListOf<Long>() }
+    val laps = rememberSaveable(saver = LapsSaver) { mutableStateListOf<Long>() }
 
     LaunchedEffect(running) {
         while (running) { withFrameNanos { }; now = SystemClock.elapsedRealtime() }

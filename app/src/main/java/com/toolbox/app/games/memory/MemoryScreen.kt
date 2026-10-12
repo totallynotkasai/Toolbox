@@ -37,7 +37,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -69,13 +69,21 @@ private fun deal(d: Difficulty): List<Card> {
     return (0 until pairs).flatMap { listOf(Card(it), Card(it)) }.shuffled()
 }
 
+/** Each card as one int, symbol × 2 plus 1 if matched, so the deal survives the screen being recreated. */
+private val CardsSaver = Saver<List<Card>, IntArray>(
+    save = { cards -> IntArray(cards.size) { cards[it].symbol * 2 + if (cards[it].matched) 1 else 0 } },
+    restore = { saved -> saved.map { Card(it / 2, matched = it % 2 == 1) } },
+)
+
+private val OpenSaver = Saver<List<Int>, IntArray>(save = { it.toIntArray() }, restore = { it.toList() })
+
 @Composable
 fun MemoryScreen(onBack: () -> Unit) {
     val haptics = rememberHaptics()
     val difficulty = Difficulty.Medium
-    var cards by remember(difficulty) { mutableStateOf(deal(difficulty)) }
-    var open by remember(difficulty) { mutableStateOf(listOf<Int>()) }
-    var moves by remember(difficulty) { mutableIntStateOf(0) }
+    var cards by rememberSaveable(difficulty, stateSaver = CardsSaver) { mutableStateOf(deal(difficulty)) }
+    var open by rememberSaveable(difficulty, stateSaver = OpenSaver) { mutableStateOf(listOf<Int>()) }
+    var moves by rememberSaveable(difficulty) { mutableIntStateOf(0) }
     val (best, submit) = rememberBestScore("memory-${difficulty.name}", lowerIsBetter = true)
     val won = cards.all { it.matched }
 

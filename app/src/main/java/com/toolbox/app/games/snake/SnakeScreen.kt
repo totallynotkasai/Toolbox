@@ -20,7 +20,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,11 +43,13 @@ import kotlin.math.abs
 private const val COLS = 17
 private const val ROWS = 15
 
-private data class Cell(val x: Int, val y: Int)
-private enum class Dir(val dx: Int, val dy: Int) { Up(0, -1), Down(0, 1), Left(-1, 0), Right(1, 0) }
-private enum class State { Ready, Playing, Over }
+internal data class Cell(val x: Int, val y: Int)
+internal enum class Dir(val dx: Int, val dy: Int) { Up(0, -1), Down(0, 1), Left(-1, 0), Right(1, 0) }
 
-private class SnakeGame {
+/** [Paused] is a game brought back after the screen was recreated: the board is kept, waiting for Resume. */
+internal enum class State { Ready, Playing, Paused, Over }
+
+internal class SnakeGame {
     var snake by mutableStateOf(listOf(Cell(4, ROWS / 2), Cell(3, ROWS / 2), Cell(2, ROWS / 2)))
     var food by mutableStateOf(Cell(12, ROWS / 2))
     var dir = Dir.Right
@@ -62,6 +65,21 @@ private class SnakeGame {
     fun turn(d: Dir) {
         val last = queued.lastOrNull() ?: dir
         if (d != last && (d.dx + last.dx != 0 || d.dy + last.dy != 0) && queued.size < 3) queued.addLast(d)
+    }
+
+    /**
+     * The board as ints for saved state: direction, state, score, food, then the snake from the head. Buffered turns
+     * aren't kept, and a game in play comes back [State.Paused].
+     */
+    fun save(): IntArray = intArrayOf(dir.ordinal, state.ordinal, score, food.x, food.y) + snake.flatMap { listOf(it.x, it.y) }
+
+    fun restore(saved: IntArray) {
+        dir = Dir.entries[saved[0]]
+        state = State.entries[saved[1]].let { if (it == State.Playing) State.Paused else it }
+        score = saved[2]
+        food = Cell(saved[3], saved[4])
+        snake = (5 until saved.size step 2).map { Cell(saved[it], saved[it + 1]) }
+        queued.clear()
     }
 
     /** Returns true if food was eaten. */
@@ -86,7 +104,7 @@ private class SnakeGame {
 @Composable
 fun SnakeScreen(onBack: () -> Unit) {
     val haptics = rememberHaptics()
-    val game = remember { SnakeGame() }
+    val game = rememberSaveable(saver = Saver(save = { it.save() }, restore = { SnakeGame().apply { restore(it) } })) { SnakeGame() }
     val (best, submit) = rememberBestScore("snake")
 
     LaunchedEffect(game.state) {
@@ -123,7 +141,7 @@ fun SnakeScreen(onBack: () -> Unit) {
                     )
                 },
         ) {
-        ToolBody(padding) {
+        ToolBody(padding, scroll = false) { // a vertical swipe steers, so it mustn't scroll
             Row(Modifier.widthIn(max = 480.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("🍎 ${game.score}", style = MaterialTheme.typography.titleLarge)
                 Text("🏆 $best", style = MaterialTheme.typography.titleLarge)
@@ -162,8 +180,14 @@ fun SnakeScreen(onBack: () -> Unit) {
                     drawCircle(Color.White, eye * 1.6f, Offset(head.x * cw + cw * 0.65f, head.y * ch + ch * 0.35f))
                 }
                 if (game.state != State.Playing) {
-                    Button(onClick = { game.reset(); game.state = State.Playing }) {
-                        Text(if (game.state == State.Over) "Game over · Play again" else "Play")
+                    Button(onClick = { if (game.state != State.Paused) game.reset(); game.state = State.Playing }) {
+                        Text(
+                            when (game.state) {
+                                State.Over -> "Game over · Play again"
+                                State.Paused -> "Resume"
+                                else -> "Play"
+                            },
+                        )
                     }
                 }
             }

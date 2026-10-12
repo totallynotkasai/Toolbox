@@ -1,6 +1,7 @@
 package com.toolbox.app.toys.rainstick
 
 import android.hardware.Sensor
+import android.view.Surface
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -38,10 +39,12 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberPcmStream
 import com.toolbox.app.ui.common.rememberSensorListener
+import com.toolbox.app.ui.common.toDisplayAxes
 import com.toolbox.app.ui.common.rememberVibes
 import com.toolbox.app.ui.theme.GoogleColors
 import kotlin.math.abs
@@ -94,9 +97,12 @@ fun RainStickScreen(onBack: () -> Unit) {
     // In-plane gravity from the accelerometer, in screen axes (x right, y down), lightly smoothed. Raw
     // accelerometer rather than TYPE_GRAVITY on purpose: a shake then rattles the grains too.
     val gravity = remember { FloatArray(2) }
+    val view = LocalView.current
     val hasSensor = rememberSensorListener(Sensor.TYPE_ACCELEROMETER) { e ->
-        gravity[0] += (-e.values[0] - gravity[0]) * 0.3f
-        gravity[1] += (e.values[1] - gravity[1]) * 0.3f
+        // Read per reading: a large screen can turn 180° without the screen being recreated.
+        val (x, y) = toDisplayAxes(e.values[0], e.values[1], view.display?.rotation ?: Surface.ROTATION_0)
+        gravity[0] += (-x - gravity[0]) * 0.3f
+        gravity[1] += (y - gravity[1]) * 0.3f
     }
 
     LaunchedEffect(sim) {

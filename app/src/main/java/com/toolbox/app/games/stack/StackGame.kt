@@ -87,6 +87,21 @@ class StackGame {
         return Drop.Cut(offcut)
     }
 
+    /**
+     * Everything needed to carry on after the screen is recreated, as floats: state, streak, direction, the moving
+     * block, then each tower block from the base.
+     */
+    fun save(): FloatArray = floatArrayOf(state.ordinal.toFloat(), streak.toFloat(), direction, moving.x, moving.width) +
+        tower.flatMap { listOf(it.x, it.width) }
+
+    fun restore(saved: FloatArray) {
+        state = State.entries[saved[0].toInt()]
+        streak = saved[1].toInt()
+        direction = saved[2]
+        moving = Block(saved[3], saved[4])
+        tower = (5 until saved.size step 2).map { Block(saved[it], saved[it + 1]) }
+    }
+
     /** The next block comes in from alternating sides, at the width of the top of the tower. */
     private fun spawn() {
         val w = top.width
