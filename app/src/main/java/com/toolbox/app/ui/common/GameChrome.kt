@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
@@ -46,6 +47,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 /**
@@ -67,12 +69,12 @@ fun rememberGameMode(key: String, default: GameMode = GameMode.Solo): MutableSta
 /** "Solo" and "2 players" chips. [onSelect] is only called for the mode that isn't already chosen. */
 @Composable
 fun GameModeChips(mode: GameMode, onSelect: (GameMode) -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         for (m in GameMode.entries) {
             FilterChip(
                 selected = mode == m,
                 onClick = { if (mode != m) onSelect(m) },
-                label = { Text(m.label, maxLines = 1) },
+                label = { Text(m.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 enabled = enabled,
             )
         }
@@ -85,19 +87,19 @@ fun NewGameButton(onClick: () -> Unit, enabled: Boolean = true, description: Str
     IconButton(onClick = onClick, enabled = enabled) { Icon(Icons.Filled.RestartAlt, contentDescription = description) }
 }
 
-/** Whose turn it is, with their colour as a dot when there is one. Read out by TalkBack as it changes. */
+/** Whose turn it is, with their colour as a dot when there is one. Read out by TalkBack as it changes, hint and all. */
 @Composable
 fun TurnStatus(text: String, color: Color?, modifier: Modifier = Modifier, hint: String? = null) {
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.heightIn(min = 32.dp).semantics { liveRegion = LiveRegionMode.Polite },
-        ) {
+    Column(
+        modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.heightIn(min = 32.dp)) {
             if (color != null) {
                 Box(Modifier.size(16.dp).background(color, CircleShape))
                 Spacer(Modifier.width(8.dp))
             }
-            Text(text, style = MaterialTheme.typography.titleLarge)
+            Text(text, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
         }
         if (hint != null) {
             Text(hint, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
@@ -113,14 +115,15 @@ data class GameOver(val title: String, val detail: String? = null)
 fun GameOverCard(over: GameOver, onAction: () -> Unit, modifier: Modifier = Modifier, action: String = "Play again", enabled: Boolean = true) {
     Surface(modifier.widthIn(max = 400.dp).fillMaxWidth(), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                over.title,
-                style = MaterialTheme.typography.titleLarge,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-            )
-            if (over.detail != null) {
-                Text(over.detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+            // The title and detail are read out together when the card appears ("You lose. The word was CAT").
+            Column(
+                Modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(over.title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+                if (over.detail != null) {
+                    Text(over.detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                }
             }
             Spacer(Modifier.height(10.dp))
             Button(onClick = onAction, enabled = enabled) { Text(action) }
@@ -203,7 +206,7 @@ fun GameGuardDialog(guard: GameGuard) {
 fun ScoresMenu(onReset: () -> Unit, label: String = "Reset scores") {
     var open by remember { mutableStateOf(false) }
     Box {
-        IconButton(onClick = { open = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More") }
+        IconButton(onClick = { open = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More options") }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             DropdownMenuItem(text = { Text(label) }, onClick = { onReset(); open = false })
         }

@@ -6,12 +6,14 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -27,16 +29,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.toolbox.app.ui.common.AnnounceOnStart
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.rememberAnnouncer
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.common.rememberPref
 import com.toolbox.app.ui.common.rememberSensorListener
 import com.toolbox.app.ui.common.toDisplayAxes
 import com.toolbox.app.ui.theme.GoogleColors
+import com.toolbox.app.ui.theme.ink
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.hypot
@@ -105,8 +112,10 @@ fun LevelScreen(onBack: () -> Unit) {
     // The zero is kept in the phone's axes, so it stays right if a large screen turns.
     val tilt = (raw - Tilt(zeroRoll, zeroPitch)).onDisplay(rotation)
 
-    val bubbleColor by animateColorAsState(if (tilt.isLevel) GoogleColors.Green else MaterialTheme.colorScheme.primary, label = "bubble")
+    val levelColor = GoogleColors.Green.ink()
+    val bubbleColor by animateColorAsState(if (tilt.isLevel) levelColor else MaterialTheme.colorScheme.primary, label = "bubble")
     val ring = MaterialTheme.colorScheme.outlineVariant
+    val say = rememberAnnouncer()
 
     ToolScaffold(title = "Bubble Level", onBack = onBack) { padding ->
         ToolBody(padding) {
@@ -114,7 +123,9 @@ fun LevelScreen(onBack: () -> Unit) {
                 Text("This device has no accelerometer.")
                 return@ToolBody
             }
-            Canvas(Modifier.widthIn(max = 340.dp).fillMaxWidth().aspectRatio(1f)) {
+            AnnounceOnStart(tilt.isLevel, "Level")
+            // Drawing only: the readings and status line below say what it shows.
+            Canvas(Modifier.widthIn(max = 340.dp).fillMaxWidth().aspectRatio(1f).clearAndSetSemantics {}) {
                 val r = size.minDimension / 2
                 drawCircle(ring, r, style = Stroke(2.dp.toPx()))
                 drawCircle(ring, r * 0.5f, style = Stroke(2.dp.toPx()))
@@ -130,7 +141,12 @@ fun LevelScreen(onBack: () -> Unit) {
                 drawCircle(bubbleColor.copy(alpha = 0.85f), r * 0.11f, Offset(center.x + dx, center.y + dy))
             }
             Spacer(Modifier.height(24.dp))
-            Row(Modifier.widthIn(max = 360.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            // The two readings go one above the other when large text makes them too wide to sit side by side.
+            FlowRow(
+                Modifier.widthIn(max = 360.dp).fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Axis("Left–right", tilt.roll)
                 Axis("Front–back", tilt.pitch)
             }
@@ -138,15 +154,17 @@ fun LevelScreen(onBack: () -> Unit) {
             Text(
                 levelStatus(tilt),
                 style = MaterialTheme.typography.titleMedium,
-                color = if (tilt.isLevel) GoogleColors.Green else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (tilt.isLevel) levelColor else MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(24.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 FilledTonalButton(
-                    onClick = { haptics.click(); zeroRoll = raw.roll; zeroPitch = raw.pitch },
+                    onClick = { haptics.click(); zeroRoll = raw.roll; zeroPitch = raw.pitch; say("Calibrated") },
                     enabled = raw.steepest <= RIM_DEG,
                 ) { Text("Set as level") }
-                if (zeroed) TextButton(onClick = { haptics.click(); zeroRoll = 0f; zeroPitch = 0f }) { Text("Reset") }
+                if (zeroed) {
+                    TextButton(onClick = { haptics.click(); zeroRoll = 0f; zeroPitch = 0f; say("Calibration reset") }) { Text("Reset") }
+                }
             }
             Spacer(Modifier.height(8.dp))
             Text(
@@ -165,6 +183,13 @@ fun LevelScreen(onBack: () -> Unit) {
 private fun Axis(label: String, deg: Float) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.semantics(mergeDescendants = true) {}) {
         Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(formatDegrees(deg), style = MaterialTheme.typography.displaySmall)
+        val style = MaterialTheme.typography.displaySmall
+        Text(
+            formatDegrees(deg),
+            style = style,
+            maxLines = 1,
+            softWrap = false,
+            autoSize = TextAutoSize.StepBased(minFontSize = 20.sp, maxFontSize = style.fontSize),
+        )
     }
 }

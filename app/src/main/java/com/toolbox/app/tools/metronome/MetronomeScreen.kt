@@ -9,13 +9,19 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Pause
@@ -42,10 +48,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleStartEffect
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.rememberAnnouncer
 import kotlinx.coroutines.launch
 
 private const val MIN_BPM = 30
@@ -92,7 +104,10 @@ fun MetronomeScreen(onBack: () -> Unit) {
         }
     }
 
+    val say = rememberAnnouncer()
     fun setBpm(v: Int) { bpm = v.coerceIn(MIN_BPM, MAX_BPM) }
+    // The buttons say the new tempo; the slider doesn't, as TalkBack reads its value as it moves.
+    fun nudge(by: Int) { setBpm(bpm + by); say("$bpm BPM") }
     fun tap() {
         val now = SystemClock.elapsedRealtime()
         if (taps.isNotEmpty() && now - taps.last() > 2000) taps.clear()
@@ -101,6 +116,7 @@ fun MetronomeScreen(onBack: () -> Unit) {
         if (taps.size >= 2) {
             val avg = (taps.last() - taps.first()).toDouble() / (taps.size - 1)
             setBpm((60_000 / avg).toInt())
+            say("$bpm BPM")
         }
     }
 
@@ -114,9 +130,26 @@ fun MetronomeScreen(onBack: () -> Unit) {
                     .background(MaterialTheme.colorScheme.primaryContainer),
                 contentAlignment = Alignment.Center,
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("$bpm", style = MaterialTheme.typography.displayLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                    Text("BPM · ${tempoName(bpm)}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                // Inset so the number shrinks to stay inside the circle at large font sizes.
+                Column(Modifier.padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    val big = MaterialTheme.typography.displayLarge
+                    val small = MaterialTheme.typography.labelLarge
+                    Text(
+                        "$bpm",
+                        style = big,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        maxLines = 1,
+                        softWrap = false,
+                        autoSize = TextAutoSize.StepBased(minFontSize = 20.sp, maxFontSize = big.fontSize),
+                    )
+                    Text(
+                        "BPM · ${tempoName(bpm)}",
+                        style = small,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        maxLines = 1,
+                        softWrap = false,
+                        autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = small.fontSize),
+                    )
                 }
             }
             Spacer(Modifier.height(24.dp))
@@ -125,25 +158,46 @@ fun MetronomeScreen(onBack: () -> Unit) {
             }
             Spacer(Modifier.height(24.dp))
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.widthIn(max = 420.dp)) {
-                FilledTonalIconButton(onClick = { setBpm(bpm - 1) }) { Icon(Icons.Filled.Remove, "Slower") }
+                FilledTonalIconButton(onClick = { nudge(-1) }) { Icon(Icons.Filled.Remove, "Slower") }
                 Slider(
                     value = bpm.toFloat(),
                     onValueChange = { setBpm(it.toInt()) },
                     valueRange = MIN_BPM.toFloat()..MAX_BPM.toFloat(),
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).semantics {
+                        contentDescription = "Tempo"
+                        stateDescription = "$bpm BPM"
+                    },
                 )
-                FilledTonalIconButton(onClick = { setBpm(bpm + 1) }) { Icon(Icons.Filled.Add, "Faster") }
+                FilledTonalIconButton(onClick = { nudge(1) }) { Icon(Icons.Filled.Add, "Faster") }
             }
             Spacer(Modifier.height(16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Wraps at large font sizes. TalkBack hears "4 beats per bar" rather than a fraction.
+            FlowRow(
+                Modifier.selectableGroup().semantics { contentDescription = "Time signature" },
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            ) {
                 listOf(2, 3, 4, 6).forEach { b ->
-                    FilterChip(selected = beats == b, onClick = { beats = b }, label = { Text("$b/4") })
+                    FilterChip(
+                        selected = beats == b,
+                        onClick = { beats = b },
+                        label = { Text("$b/4") },
+                        modifier = Modifier.semantics { contentDescription = "$b beats per bar" },
+                    )
                 }
             }
             Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // The whole row is the switch, so TalkBack reads the label with it and a tap anywhere on it toggles.
+            Row(
+                Modifier
+                    .heightIn(min = 48.dp)
+                    .clip(MaterialTheme.shapes.small)
+                    .toggleable(value = accent, role = Role.Switch) { accent = it }
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Text("Accent first beat")
-                Switch(checked = accent, onCheckedChange = { accent = it })
+                Switch(checked = accent, onCheckedChange = null)
             }
             Spacer(Modifier.height(24.dp))
             Row(

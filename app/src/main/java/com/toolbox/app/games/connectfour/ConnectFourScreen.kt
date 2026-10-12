@@ -68,6 +68,7 @@ import com.toolbox.app.ui.common.Score
 import com.toolbox.app.ui.common.ScoreRow
 import com.toolbox.app.ui.common.ScoresMenu
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.rememberAnnouncer
 import com.toolbox.app.ui.common.rememberGameGuard
 import com.toolbox.app.ui.common.rememberGameMode
 import com.toolbox.app.ui.common.rememberTally
@@ -86,9 +87,19 @@ private val YELLOW = GoogleColors.Yellow
 private fun discColor(player: Int) = if (player == 1) RED else YELLOW
 private fun colorName(player: Int) = if (player == 1) "Red" else "Yellow"
 
+/** A column as TalkBack reads it, its discs from the bottom up and the room left: "Column 4: red, yellow; 4 free". */
+internal fun columnSpoken(board: ConnectFour, col: Int): String {
+    val free = ROWS - board.height(col)
+    val room = if (free == 0) "full" else "$free free"
+    if (free == ROWS) return "Column ${col + 1}: empty"
+    val discs = (0 until board.height(col)).joinToString(", ") { colorName(board[col, it]).lowercase() }
+    return "Column ${col + 1}: $discs; $room"
+}
+
 @Composable
 fun ConnectFourScreen(onBack: () -> Unit) {
     val haptics = rememberHaptics()
+    val say = rememberAnnouncer()
     val scope = rememberCoroutineScope()
     val guard = rememberGameGuard()
     var mode by rememberGameMode("connect4_mode")
@@ -123,6 +134,11 @@ fun ConnectFourScreen(onBack: () -> Unit) {
     fun play(col: Int) {
         if (over || dropping || !board.canPlay(col)) return
         val rowsFallen = ROWS - board.height(col) // from the row above the board down to its landing row
+        // TalkBack hears where the other side played: the computer, or whoever just went in a two-player game.
+        when {
+            !mode.vsComputer -> say("${colorName(board.toMove)} dropped in column ${col + 1}")
+            board.toMove == cpuPlayer -> say("Computer dropped in column ${col + 1}")
+        }
         val next = moves + col
         moves = next
         // The result is counted straight away, so leaving during the last drop can't lose it. Only the thud waits.
@@ -385,7 +401,7 @@ private fun BoardView(
                         .fillMaxHeight()
                         .semantics {
                             role = Role.Button
-                            contentDescription = "Column ${col + 1}, " + if (free == 0) "full" else "$free free"
+                            contentDescription = columnSpoken(board, col)
                             if (!enabled || free == 0) disabled()
                             onClick(label = "Drop a disc") { onDrop(col); true }
                         },
@@ -396,7 +412,8 @@ private fun BoardView(
 }
 
 private fun DrawScope.drawDisc(c: Offset, r: Float, color: Color, alpha: Float = 1f) {
-    drawCircle(lerp(color, Color.Black, 0.18f), r, c, alpha = alpha)
+    // The rim keeps a disc 3:1 against the light showing round it through the hole; yellow needs a much deeper one.
+    drawCircle(if (color == YELLOW) GoogleColors.YellowInk else lerp(color, Color.Black, 0.18f), r, c, alpha = alpha)
     drawCircle(
         Brush.radialGradient(listOf(lerp(color, Color.White, 0.25f), color), c - Offset(r * 0.3f, r * 0.3f), r),
         r * 0.8f, c, alpha = alpha,

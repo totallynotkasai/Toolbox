@@ -6,12 +6,14 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
@@ -40,6 +42,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -50,11 +59,14 @@ import com.toolbox.app.ui.common.GameGuardDialog
 import com.toolbox.app.ui.common.NewGameButton
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.accessibilityActions
 import com.toolbox.app.ui.common.rememberBestScore
 import com.toolbox.app.ui.common.rememberGameGuard
 import com.toolbox.app.ui.common.rememberGameLoop
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.theme.GoogleColors
+import com.toolbox.app.ui.theme.ink
+import com.toolbox.app.ui.theme.isLight
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.hypot
@@ -76,12 +88,13 @@ private enum class Mode(val label: String) { Classic("Classic"), Action("Action"
 
 private enum class Kind { Normal, Tough, Steel, Explosive }
 
+// Green, red and pink are darker than the Google tones, so the white letter on each reads clearly.
 private enum class Power(val letter: String, val color: Color, val weight: Int) {
     Wide("W", GoogleColors.Blue, 5),
-    Multi("M", GoogleColors.Green, 5),
+    Multi("M", GoogleColors.GreenInk, 5),
     Slow("S", Color(0xFF8E24AA), 4),
-    Fire("F", GoogleColors.Red, 3),
-    Life("+", Color(0xFFE91E63), 1),
+    Fire("F", Color(0xFFC5221F), 3),
+    Life("+", Color(0xFFC2185B), 1),
     Shrink("−", Color(0xFF5F6368), 3), // the one to dodge
 }
 
@@ -367,8 +380,14 @@ fun BlockBreakerScreen(onBack: () -> Unit) {
         }
     }
 
+    fun nudgePaddle(by: Float) {
+        game.paddleX = (game.paddleX + by).coerceIn(game.paddleW / 2, 1 - game.paddleW / 2)
+        loop.wake()
+    }
+
     val surface = MaterialTheme.colorScheme.surfaceContainer
     val paddleColor = MaterialTheme.colorScheme.onSurface
+    val light = MaterialTheme.colorScheme.isLight
 
     ToolScaffold(
         title = "Block Breaker",
@@ -391,10 +410,17 @@ fun BlockBreakerScreen(onBack: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(8.dp))
-            Row(Modifier.widthIn(max = 440.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            // Wraps onto a second line at large font sizes.
+            FlowRow(Modifier.widthIn(max = 440.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Score ${game.score}", style = MaterialTheme.typography.titleMedium)
                 Text("Level ${game.level}", style = MaterialTheme.typography.titleMedium)
-                Text("♥ ${game.lives.coerceAtLeast(0)}", style = MaterialTheme.typography.titleMedium, color = GoogleColors.Red)
+                val lives = game.lives.coerceAtLeast(0)
+                Text(
+                    "♥ $lives",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = GoogleColors.Red.ink(),
+                    modifier = Modifier.clearAndSetSemantics { contentDescription = livesText(lives) },
+                )
                 Text("Best $best", style = MaterialTheme.typography.titleMedium)
             }
             if (game.action) ActiveEffects(game) { frame }
@@ -414,13 +440,24 @@ fun BlockBreakerScreen(onBack: () -> Unit) {
                             game.paddleX = (change.position.x / size.width).coerceIn(game.paddleW / 2, 1 - game.paddleW / 2)
                             loop.wake()
                         }
+                    }
+                    // With TalkBack a double tap does what a tap does, and the paddle moves from its actions menu.
+                    .semantics {
+                        contentDescription = "Play area, level ${game.level}, ${livesText(game.lives.coerceAtLeast(0))}"
+                        onClick(label = if (game.over) "Play again" else "Launch ball") { game.launch(); loop.wake(); true }
+                        if (!game.over) {
+                            customActions = accessibilityActions(
+                                "Move paddle left" to { nudgePaddle(-PADDLE_NUDGE) },
+                                "Move paddle right" to { nudgePaddle(PADDLE_NUDGE) },
+                            )
+                        }
                     },
                 contentAlignment = Alignment.Center,
             ) {
                 Canvas(Modifier.fillMaxSize()) {
                     frame // read so the canvas redraws every frame
                     val s = size.width
-                    game.bricks.forEach { if (it.alive) drawBrick(it, game.colorOf(it), s) }
+                    game.bricks.forEach { if (it.alive) drawBrick(it, game.colorOf(it), s, light) }
                     game.particles.forEach { p ->
                         drawCircle(p.color.copy(alpha = (p.life / 0.8f).coerceIn(0f, 1f)), 0.006f * s, Offset(p.x * s, p.y * s))
                     }
@@ -448,7 +485,11 @@ fun BlockBreakerScreen(onBack: () -> Unit) {
                     }
                 }
                 when {
-                    game.over -> Text("Game over · tap to play again", style = MaterialTheme.typography.titleMedium)
+                    game.over -> Text(
+                        "Game over · tap to play again",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    )
                     game.stuck -> Text(
                         if (game.level > 1) "Level ${game.level} · tap to launch" else "Tap to launch · drag to move",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -478,7 +519,7 @@ private fun ActiveEffects(game: Breaker, frame: () -> Long) {
         (Power.Slow to game.slowT).takeIf { it.second > 0 },
         (Power.Fire to game.fireT).takeIf { it.second > 0 },
     )
-    Row(Modifier.height(28.dp).padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.heightIn(min = 28.dp).padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         active.forEach { (p, t) ->
             Box(Modifier.clip(CircleShape).background(p.color).padding(horizontal = 10.dp, vertical = 2.dp)) {
                 Text("${p.letter} ${t.toInt() + 1}s", color = Color.White, style = MaterialTheme.typography.labelMedium)
@@ -487,12 +528,24 @@ private fun ActiveEffects(game: Breaker, frame: () -> Long) {
     }
 }
 
-private fun DrawScope.drawBrick(b: Brick, color: Color, s: Float) {
+/** "3 lives", "1 life". */
+private fun livesText(lives: Int) = if (lives == 1) "1 life" else "$lives lives"
+
+/** How far a TalkBack "Move paddle" action moves it, as a share of the width. */
+private const val PADDLE_NUDGE = 0.1f
+
+private fun DrawScope.drawBrick(b: Brick, color: Color, s: Float, light: Boolean) {
     val tl = Offset(b.rect.left * s, b.rect.top * s)
     val sz = Size(b.rect.width * s, b.rect.height * s)
     val corner = CornerRadius(4.dp.toPx())
+    // On a light background yellow and green bricks are faint, so they get a thin edge of the darker tone.
+    fun edge(fill: Color) {
+        if (!light || (fill != GoogleColors.Yellow && fill != GoogleColors.Green)) return
+        val w = 1.dp.toPx()
+        drawRoundRect(GoogleColors.ink(fill, light), tl + Offset(w / 2, w / 2), Size(sz.width - w, sz.height - w), corner, style = Stroke(w))
+    }
     when (b.kind) {
-        Kind.Normal -> drawRoundRect(color, tl, sz, corner)
+        Kind.Normal -> { drawRoundRect(color, tl, sz, corner); edge(color) }
         Kind.Tough -> {
             // Darker, with a bevel; cracks appear as it takes damage.
             drawRoundRect(color.copy(red = color.red * 0.7f, green = color.green * 0.7f, blue = color.blue * 0.7f), tl, sz, corner)
@@ -510,6 +563,7 @@ private fun DrawScope.drawBrick(b: Brick, color: Color, s: Float) {
         }
         Kind.Explosive -> {
             drawRoundRect(GoogleColors.Yellow, tl, sz, corner)
+            edge(GoogleColors.Yellow)
             drawCircle(color, sz.height * 0.32f, tl + Offset(sz.width / 2, sz.height / 2))
             drawCircle(Color.White, sz.height * 0.12f, tl + Offset(sz.width / 2, sz.height / 2))
         }

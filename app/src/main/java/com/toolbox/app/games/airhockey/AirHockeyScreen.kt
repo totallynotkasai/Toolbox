@@ -37,11 +37,12 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.toolbox.app.ui.common.GameGuardDialog
@@ -49,6 +50,7 @@ import com.toolbox.app.ui.common.GameModeChips
 import com.toolbox.app.ui.common.NewGameButton
 import com.toolbox.app.ui.common.ScoresMenu
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.rememberAnnouncer
 import com.toolbox.app.ui.common.rememberGameGuard
 import com.toolbox.app.ui.common.rememberGameLoop
 import com.toolbox.app.ui.common.rememberGameMode
@@ -70,6 +72,7 @@ private val TOP = GoogleColors.Red
 @Composable
 fun AirHockeyScreen(onBack: () -> Unit) {
     val haptics = rememberHaptics()
+    val say = rememberAnnouncer()
     val synth = rememberToneSynth()
     val guard = rememberGameGuard()
     var mode by rememberGameMode("airhockey_mode")
@@ -130,6 +133,8 @@ fun AirHockeyScreen(onBack: () -> Unit) {
             // Runs while a match is being played and the app is in view.
             rememberGameLoop(enabled = playing) { dt ->
                 if (cpu) game.aiTarget().let { game.setTarget(1, it.x, it.y) }
+                // Goals and the result are only shown in the drawn scores and cards, so TalkBack is told them.
+                var news: String? = null
                 for (e in game.step(dt)) when (e) {
                     is AirHockey.Event.Hit -> {
                         synth.knock(0.3f + 0.7f * e.intensity)
@@ -140,13 +145,16 @@ fun AirHockeyScreen(onBack: () -> Unit) {
                         synth.play(if (e.scorer == 0 || !cpu) 784f else 392f, 220, 0.45f)
                         haptics.heavy()
                         blue = game.scores[0]; red = game.scores[1]
+                        news = airHockeyGoalText(e.scorer, blue, red, cpu)
                     }
                 }
                 game.winner?.let { w ->
                     playing = false
                     finished = true
                     currentTally.record(w + 1)
+                    news = airHockeyResultText(w, game.scores[0], game.scores[1], cpu)
                 }
+                news?.let(say)
                 frame++
                 playing
             }
@@ -163,7 +171,11 @@ fun AirHockeyScreen(onBack: () -> Unit) {
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         if (!cpu) {
-                            MessageCard(if (finished) resultText(game, cpu, top = true) else "First to ${AirHockey.WIN_SCORE}", Modifier.rotate(180f))
+                            // The same message turned to face the top player; TalkBack reads only the bottom one.
+                            MessageCard(
+                                if (finished) resultText(game, cpu, top = true) else "First to ${AirHockey.WIN_SCORE}",
+                                Modifier.rotate(180f).clearAndSetSemantics { },
+                            )
                             Spacer(Modifier.height(16.dp))
                         }
                         MessageCard(if (finished) resultText(game, cpu, top = false) else "First to ${AirHockey.WIN_SCORE}")
@@ -206,9 +218,32 @@ private fun resultText(game: AirHockey, cpu: Boolean, top: Boolean): String {
     return "$headline  $score"
 }
 
+/** What TalkBack says when a goal goes in: "Blue scores, 3 to 2", the score always Blue's (or your) side first. */
+internal fun airHockeyGoalText(scorer: Int, blue: Int, red: Int, cpu: Boolean): String {
+    val who = when {
+        cpu -> if (scorer == 0) "You score" else "The computer scores"
+        else -> if (scorer == 0) "Blue scores" else "Red scores"
+    }
+    return "$who, $blue to $red"
+}
+
+/** What TalkBack says when the match is won: "Red wins the match, 5 to 7". */
+internal fun airHockeyResultText(winner: Int, blue: Int, red: Int, cpu: Boolean): String {
+    val who = when {
+        cpu -> if (winner == 0) "You win the match" else "The computer wins the match"
+        else -> if (winner == 0) "Blue wins the match" else "Red wins the match"
+    }
+    return "$who, $blue to $red"
+}
+
+/**
+ * A player's score, drawn on the table like its markings: it keeps its size whatever the font size, so the two never
+ * overlap, and TalkBack reads the scores from the table's description instead.
+ */
 @Composable
 private fun ScoreBadge(score: Int, color: Color, modifier: Modifier) {
-    Text("$score", fontSize = 40.sp, fontWeight = FontWeight.Light, color = color.copy(alpha = 0.75f), modifier = modifier)
+    val size = with(LocalDensity.current) { 40.dp.toSp() }
+    Text("$score", fontSize = size, fontWeight = FontWeight.Light, color = color, modifier = modifier.clearAndSetSemantics { })
 }
 
 @Composable

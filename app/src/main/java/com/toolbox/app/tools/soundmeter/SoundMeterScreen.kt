@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
@@ -66,13 +67,17 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.edit
@@ -85,6 +90,7 @@ import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.common.rememberPref
 import com.toolbox.app.ui.common.supportsUnprocessedMic
 import com.toolbox.app.ui.theme.GoogleColors
+import com.toolbox.app.ui.theme.ink
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.cos
@@ -269,14 +275,17 @@ private fun Gauge(db: Float, peak: Float, modifier: Modifier) {
     val zone = zoneFor(if (valid) db else 0f)
     // A light spring smooths the 10 Hz readings into a needle-like motion without lagging real changes.
     val animated by animateFloatAsState(if (valid) db else GAUGE_MIN, spring(dampingRatio = 0.9f, stiffness = 300f), label = "db")
-    val color by animateColorAsState(if (valid) ZONE_COLORS.getValue(zone) else track, label = "zone")
-    val tickLabels = remember(measurer, tickColor) {
+    val color by animateColorAsState(if (valid) ZONE_COLORS.getValue(zone).ink() else track, label = "zone")
+    // The scale numbers keep one size: there's no room inside the arc for them to grow with the font size.
+    val unscaled = Density(LocalDensity.current.density)
+    val tickLabels = remember(measurer, tickColor, unscaled) {
         (GAUGE_MIN.toInt()..GAUGE_MAX.toInt() step 20).associateWith {
-            measurer.measure("$it", TextStyle(color = tickColor, fontSize = 11.sp))
+            measurer.measure("$it", TextStyle(color = tickColor, fontSize = 11.sp), density = unscaled)
         }
     }
 
-    Box(modifier.semantics { contentDescription = if (valid) "About ${db.roundToInt()} decibels, ${zone.label}" else "Listening" },
+    // Not a live region: the reading changes ten times a second.
+    Box(modifier.clearAndSetSemantics { contentDescription = if (valid) "About ${db.roundToInt()} decibels, ${zone.label}" else "Listening" },
         contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             val stroke = 16.dp.toPx()
@@ -309,16 +318,26 @@ private fun Gauge(db: Float, peak: Float, modifier: Modifier) {
                 }
             }
         }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // Kept inside the arc: at large font sizes the number shrinks rather than running over the scale.
+        Column(Modifier.fillMaxWidth(0.6f), horizontalAlignment = Alignment.CenterHorizontally) {
             Row(verticalAlignment = Alignment.Bottom) {
-                Text(if (valid) "${db.roundToInt()}" else "–", style = MaterialTheme.typography.displayLarge, fontWeight = FontWeight.Medium)
+                Text(
+                    if (valid) "${db.roundToInt()}" else "–",
+                    style = MaterialTheme.typography.displayLarge,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    softWrap = false,
+                    autoSize = TextAutoSize.StepBased(minFontSize = 20.sp, maxFontSize = MaterialTheme.typography.displayLarge.fontSize),
+                    modifier = Modifier.weight(1f, fill = false),
+                )
                 // Phone mics aren't calibrated and the reading isn't weighted, so the unit says it's approximate.
                 Column(Modifier.padding(start = 6.dp, bottom = 10.dp)) {
                     Text("approx.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("dB", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            Text(if (valid) zone.label else "Listening…", style = MaterialTheme.typography.titleMedium, color = if (valid) color else tickColor)
+            Text(if (valid) zone.label else "Listening…", style = MaterialTheme.typography.titleMedium, color = if (valid) color else tickColor,
+                textAlign = TextAlign.Center)
         }
     }
 }
@@ -348,10 +367,15 @@ private fun HistoryGraph(history: FloatArray, offset: Float, modifier: Modifier)
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
     val line = MaterialTheme.colorScheme.primary
     val bg = MaterialTheme.colorScheme.surfaceContainer
-    val labels = remember(measurer, labelColor) {
-        listOf(40, 60, 80, 100).associateWith { measurer.measure("$it", TextStyle(color = labelColor, fontSize = 10.sp)) }
+    val risk = GoogleColors.Red.ink()
+    // One size, as on the gauge: the gutter for the numbers doesn't grow with the font size.
+    val unscaled = Density(LocalDensity.current.density)
+    val labels = remember(measurer, labelColor, unscaled) {
+        listOf(40, 60, 80, 100).associateWith { measurer.measure("$it", TextStyle(color = labelColor, fontSize = 10.sp), density = unscaled) }
     }
-    val axis = remember(measurer, labelColor) { measurer.measure("30 s", TextStyle(color = labelColor, fontSize = 10.sp)) }
+    val axis = remember(measurer, labelColor, unscaled) {
+        measurer.measure("30 s", TextStyle(color = labelColor, fontSize = 10.sp), density = unscaled)
+    }
 
     Canvas(modifier.clip(RoundedCornerShape(12.dp)).background(bg).semantics { contentDescription = "Level over the last 30 seconds" }) {
         val pad = 8.dp.toPx()
@@ -364,7 +388,7 @@ private fun HistoryGraph(history: FloatArray, offset: Float, modifier: Modifier)
             drawLine(grid, Offset(left, y(v.toFloat())), Offset(left + w, y(v.toFloat())), 1.dp.toPx())
             drawText(layout, topLeft = Offset(left - layout.size.width - 6.dp.toPx(), y(v.toFloat()) - layout.size.height / 2f))
         }
-        drawLine(GoogleColors.Red.copy(alpha = 0.7f), Offset(left, y(85f)), Offset(left + w, y(85f)), 1.5.dp.toPx(),
+        drawLine(risk, Offset(left, y(85f)), Offset(left + w, y(85f)), 1.5.dp.toPx(),
             pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx())))
         drawText(axis, topLeft = Offset(left + 4.dp.toPx(), size.height - pad - axis.size.height))
 
@@ -392,16 +416,20 @@ private fun ReferenceScale(db: Float, modifier: Modifier) {
     val current = if (db.isNaN()) null else referenceFor(db)
     Card(modifier, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
         Column(Modifier.padding(vertical = 8.dp)) {
-            Text("For comparison", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+            Text("For comparison", style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).semantics { heading() })
             ReferenceLevel.entries.forEach { ref ->
                 val active = ref == current
                 val bg by animateColorAsState(if (active) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent, label = "ref")
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 8.dp).clip(RoundedCornerShape(8.dp)).background(bg)
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                        .clearAndSetSemantics {
+                            contentDescription = "${ref.db} decibels, ${ref.label}" + if (active) ", current level" else ""
+                        },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(Modifier.size(10.dp).clip(CircleShape).background(ZONE_COLORS.getValue(zoneFor(ref.db.toFloat()))))
+                    Box(Modifier.size(10.dp).clip(CircleShape).background(ZONE_COLORS.getValue(zoneFor(ref.db.toFloat())).ink()))
                     Spacer(Modifier.width(12.dp))
                     Text("${ref.db} dB", style = MaterialTheme.typography.labelLarge, maxLines = 1,
                         // Grows with the font size, so "120 dB" stays on one line.
@@ -429,7 +457,7 @@ private fun CalibrationSheet(
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).navigationBarsPadding()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Calibrate", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                Text("Calibrate", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).semantics { heading() })
                 TextButton(onClick = onDismiss) { Text("Done") }
             }
             Text(
@@ -449,7 +477,10 @@ private fun CalibrationSheet(
                 onValueChange = { onChange(it.roundToInt().toFloat()) },
                 valueRange = OFFSET_MIN..OFFSET_MAX,
                 steps = (OFFSET_MAX - OFFSET_MIN).toInt() - 1,
-                modifier = Modifier.semantics { contentDescription = "Calibration offset" },
+                modifier = Modifier.semantics {
+                    contentDescription = "Calibration offset"
+                    stateDescription = "+${offset.roundToInt()} dB"
+                },
             )
             TextButton(onClick = { onChange(default) }, enabled = offset != default) {
                 Text("Reset to +${default.roundToInt()} dB")

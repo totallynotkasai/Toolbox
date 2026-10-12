@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -55,8 +56,11 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
@@ -66,10 +70,13 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.toolbox.app.ui.common.AnnounceOnStart
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.common.rememberSensorListener
 import com.toolbox.app.ui.theme.GoogleColors
+import com.toolbox.app.ui.theme.ink
+import com.toolbox.app.ui.theme.isLight
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -181,10 +188,14 @@ private fun lowPass(input: FloatArray, output: FloatArray, alpha: Float) {
 
 @Composable
 private fun Reading(heading: Float?, errorDeg: Float?) {
+    val style = MaterialTheme.typography.displayMedium
     Text(
         heading?.let { "${roundedDegrees(it)}° ${compassPoint(it)}" } ?: "—",
-        style = MaterialTheme.typography.displayMedium,
+        style = style,
         fontWeight = FontWeight.Medium,
+        maxLines = 1,
+        softWrap = false,
+        autoSize = TextAutoSize.StepBased(minFontSize = 20.sp, maxFontSize = style.fontSize),
     )
     val note = buildString {
         append("Magnetic north")
@@ -205,8 +216,10 @@ private fun BearingControls(heading: Float?, bearing: Float?, onMark: () -> Unit
     }
     val turn = heading?.let { shortestDelta(it, bearing) }
     val onCourse = turn != null && abs(turn) <= ON_COURSE_DEG
+    AnnounceOnStart(onCourse, "On course")
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // Takes what Clear leaves, so large text wraps here rather than pushing Clear off the screen.
+        Column(Modifier.weight(1f, fill = false), horizontalAlignment = Alignment.CenterHorizontally) {
             Text("Bearing ${roundedDegrees(bearing)}° ${compassPoint(bearing)}", style = MaterialTheme.typography.titleMedium)
             Text(
                 when {
@@ -216,7 +229,7 @@ private fun BearingControls(heading: Float?, bearing: Float?, onMark: () -> Unit
                     else -> "Turn ${(-turn).roundToInt()}° left"
                 },
                 style = MaterialTheme.typography.bodyLarge,
-                color = if (onCourse) GoogleColors.Green else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (onCourse) GoogleColors.Green.ink() else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         TextButton(onClick = onClear, modifier = Modifier.padding(start = 8.dp)) {
@@ -243,6 +256,7 @@ private fun CalibrationBanner(visible: Boolean, interference: Boolean) {
                         if (visible) "Compass needs calibrating" else "Magnetic interference",
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                     )
                     Text(
                         if (visible) "Move your phone in a figure-8 a few times."
@@ -286,7 +300,12 @@ private fun Dial(heading: Float, bearing: Float?, modifier: Modifier) {
     val ink = scheme.onSurface
     val minor = scheme.onSurfaceVariant
     val bearingColor = GoogleColors.Blue
-    val labels = remember(measurer, ink, minor) {
+    // A darker grey in light mode, so the south half of the needle stands out from the face.
+    val south = if (scheme.isLight) Color(0xFF6B7177) else Color(0xFF9AA0A6)
+    // The labels are part of the drawing and sized to the card, so they don't grow with the font size and overlap;
+    // the reading under the dial is the text that does.
+    val density = LocalDensity.current
+    val labels = remember(measurer, ink, minor, density) {
         (0 until 360 step 30).associateWith { deg ->
             val cardinal = deg % 90 == 0
             val text = when (deg) { 0 -> "N"; 90 -> "E"; 180 -> "S"; 270 -> "W"; else -> "$deg" }
@@ -294,7 +313,7 @@ private fun Dial(heading: Float, bearing: Float?, modifier: Modifier) {
                 text,
                 TextStyle(
                     color = if (deg == 0) GoogleColors.Red else if (cardinal) ink else minor,
-                    fontSize = if (cardinal) 22.sp else 13.sp,
+                    fontSize = with(density) { (if (cardinal) 22.dp else 13.dp).toSp() },
                     fontWeight = if (cardinal) FontWeight.Bold else FontWeight.Normal,
                 ),
             )
@@ -330,7 +349,7 @@ private fun Dial(heading: Float, bearing: Float?, modifier: Modifier) {
                     }, bearingColor)
                 }
             }
-            drawNeedle(r * 0.5f)
+            drawNeedle(r * 0.5f, south)
         }
 
         // Fixed lubber line: a red triangle above the dial and a line across the rim.
@@ -353,12 +372,12 @@ private fun DrawScope.drawLabel(deg: Float, layout: TextLayoutResult, radius: Fl
 }
 
 /** Classic two-tone needle: red half points to north on the card, the grey half to south. */
-private fun DrawScope.drawNeedle(length: Float) {
+private fun DrawScope.drawNeedle(length: Float, southColor: Color) {
     val w = length * 0.12f
     val north = Path().apply { moveTo(center.x, center.y - length); lineTo(center.x - w, center.y); lineTo(center.x + w, center.y); close() }
     val south = Path().apply { moveTo(center.x, center.y + length); lineTo(center.x - w, center.y); lineTo(center.x + w, center.y); close() }
     drawPath(north, GoogleColors.Red)
-    drawPath(south, Color(0xFF9AA0A6))
+    drawPath(south, southColor)
     drawCircle(Color.White, w * 0.7f, center)
     drawCircle(Color(0x55000000), w * 0.7f, center, style = Stroke(1.dp.toPx()))
 }

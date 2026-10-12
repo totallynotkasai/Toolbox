@@ -2,6 +2,7 @@ package com.toolbox.app.home
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -49,6 +50,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +65,9 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -76,9 +81,19 @@ import androidx.compose.ui.unit.dp
 import com.toolbox.app.Category
 import com.toolbox.app.Favourites
 import com.toolbox.app.Tool
+import com.toolbox.app.ui.common.rememberAnnouncer
 import com.toolbox.app.ui.common.rememberPref
 import com.toolbox.app.ui.theme.GoogleColors
+import com.toolbox.app.ui.theme.ink
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+/** What TalkBack says once a search settles, from the number of tools and games that match. */
+internal fun searchSummary(found: Int): String = when (found) {
+    0 -> "Nothing matches"
+    1 -> "1 match"
+    else -> "$found matches"
+}
 
 /** Filter chip value for the Favourites group; the others are [Category] names, and null is All. */
 private const val FAVOURITES = "favourites"
@@ -118,11 +133,24 @@ fun HomeScreen(onOpen: (Tool) -> Unit, startWithSettings: Boolean = false) {
     // Back undoes a search or filter before it leaves the app. With the keyboard up, Android closes that first.
     BackHandler(enabled = query.isNotEmpty() || filter != null) { showEverything() }
 
+    // TalkBack hears how many tools match once typing pauses, since the grid changing says nothing by itself. A
+    // search still typed when coming back to the screen isn't counted again.
+    val say = rememberAnnouncer()
+    val found = if (filter == FAVOURITES) favouriteTools.size else categories.sumOf { it.second.size }
+    var counted by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(query) {
+        if (query.isBlank()) counted = ""
+        if (query.isBlank() || query == counted) return@LaunchedEffect
+        delay(800)
+        counted = query
+        say(searchSummary(found))
+    }
+
     Scaffold(
         modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
         topBar = {
             LargeTopAppBar(
-                title = { Text("Toolbox") },
+                title = { Text("Toolbox", modifier = Modifier.semantics { heading() }) },
                 actions = {
                     IconButton(onClick = { showSettings = true }) {
                         Icon(Icons.Filled.Settings, contentDescription = "Settings")
@@ -139,12 +167,13 @@ fun HomeScreen(onOpen: (Tool) -> Unit, startWithSettings: Boolean = false) {
     ) { padding ->
         BoxWithConstraints {
             // As many columns of at least MIN_TILE_WIDTH as fit, like GridCells.Adaptive, worked out here so the
-            // tile titles can be measured at the width they'll get.
+            // tile titles can be measured at the width they'll get. At large font sizes that can be fewer, so that
+            // every title fits in two lines.
             val gridWidth = maxWidth - GRID_PADDING * 2
-            val columns = ((gridWidth + GRID_SPACING) / (MIN_TILE_WIDTH + GRID_SPACING)).toInt().coerceAtLeast(1)
-            val tileWidth = (gridWidth - GRID_SPACING * (columns - 1)) / columns
+            val mostColumns = ((gridWidth + GRID_SPACING) / (MIN_TILE_WIDTH + GRID_SPACING)).toInt().coerceAtLeast(1)
             val titleStyle = MaterialTheme.typography.titleMedium.copy(hyphens = Hyphens.Auto, lineBreak = LineBreak.Heading)
-            val tileTitle = TileTitle(titleStyle, rememberTitleLines(tileWidth - TILE_PADDING * 2, titleStyle))
+            val (columns, titleLines) = rememberGridColumns(gridWidth, mostColumns, titleStyle)
+            val tileTitle = TileTitle(titleStyle, titleLines)
             LazyVerticalGrid(
                 columns = GridCells.Fixed(columns),
                 state = grid,
@@ -198,7 +227,7 @@ private fun LazyGridScope.group(
             title,
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(start = 4.dp, top = 8.dp),
+            modifier = Modifier.padding(start = 4.dp, top = 8.dp).semantics { heading() },
         )
     }
     items(tools, key = { "$key-${it.route}" }) { tool ->
@@ -296,17 +325,23 @@ private fun Modifier.bleedHorizontally(amount: Dp) = layout { measurable, constr
 private data class TileTitle(val style: TextStyle, val lines: Int)
 
 /**
- * The lines the longest tool title takes in [width], at most 2. Every tool is measured, not just those shown, so the
- * tiles don't change height while searching.
+ * The grid's columns, from [mostColumns] down, and the lines the longest tool title takes in a tile (1 or 2): the
+ * most columns in which every title fits in two lines, or one column if none do. Every tool is measured, not just
+ * those shown, so the tiles don't change size while searching.
  */
 @Composable
-private fun rememberTitleLines(width: Dp, style: TextStyle): Int {
+private fun rememberGridColumns(gridWidth: Dp, mostColumns: Int, style: TextStyle): Pair<Int, Int> {
     val measurer = rememberTextMeasurer(cacheSize = 0)
     val density = LocalDensity.current
-    return remember(width, style, density) {
-        // A pixel to spare, in case the grid rounds a column narrower than this.
-        val px = (with(density) { width.roundToPx() } - 1).coerceAtLeast(1)
-        Tool.entries.maxOf { measurer.measure(it.title, style, maxLines = 2, constraints = Constraints(maxWidth = px)).lineCount }
+    return remember(gridWidth, mostColumns, style, density) {
+        fun titleLines(columns: Int): Int? {
+            val tileWidth = (gridWidth - GRID_SPACING * (columns - 1)) / columns
+            // A pixel to spare, in case the grid rounds a column narrower than this.
+            val px = (with(density) { (tileWidth - TILE_PADDING * 2).roundToPx() } - 1).coerceAtLeast(1)
+            val titles = Tool.entries.map { measurer.measure(it.title, style, maxLines = 2, constraints = Constraints(maxWidth = px)) }
+            return if (titles.any { it.hasVisualOverflow }) null else titles.maxOf { it.lineCount }
+        }
+        (mostColumns downTo 2).firstNotNullOfOrNull { c -> titleLines(c)?.let { c to it } } ?: (1 to (titleLines(1) ?: 2))
     }
 }
 
@@ -320,7 +355,7 @@ private fun SearchField(query: String, onChange: (String) -> Unit, onSearch: () 
         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
         trailingIcon = {
             if (query.isNotEmpty()) {
-                IconButton(onClick = { onChange("") }) { Icon(Icons.Filled.Close, contentDescription = "Clear") }
+                IconButton(onClick = { onChange("") }) { Icon(Icons.Filled.Close, contentDescription = "Clear search") }
             }
         },
         singleLine = true,
@@ -338,18 +373,21 @@ private fun SearchField(query: String, onChange: (String) -> Unit, onSearch: () 
 
 @Composable
 private fun ToolCard(tool: Tool, favourite: Boolean, title: TileTitle, onClick: () -> Unit, onToggleFavourite: () -> Unit) {
+    val shape = MaterialTheme.shapes.large
     Card(
-        onClick = onClick,
+        // TalkBack reads the tile as its title, a button that opens.
+        modifier = Modifier.clip(shape).clickable(onClickLabel = "Open", role = Role.Button, onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        shape = MaterialTheme.shapes.large,
+        shape = shape,
     ) {
         Column(Modifier.fillMaxWidth().padding(TILE_PADDING)) {
             Row(verticalAlignment = Alignment.Top) {
+                // The tint keeps the bright accent; the glyph on it is the darker light-mode tone, so it shows up.
                 Box(
                     Modifier.size(48.dp).clip(CircleShape).background(tool.accent.copy(alpha = 0.16f)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(tool.icon, contentDescription = null, tint = tool.accent, modifier = Modifier.size(26.dp))
+                    Icon(tool.icon, contentDescription = null, tint = tool.accent.ink(), modifier = Modifier.size(26.dp))
                 }
                 Spacer(Modifier.weight(1f))
                 // Pulled into the card's padding so the 48dp touch target doesn't push the title down.
@@ -357,7 +395,7 @@ private fun ToolCard(tool: Tool, favourite: Boolean, title: TileTitle, onClick: 
                     Icon(
                         if (favourite) Icons.Filled.Star else Icons.Filled.StarBorder,
                         contentDescription = if (favourite) "Remove ${tool.title} from favourites" else "Add ${tool.title} to favourites",
-                        tint = if (favourite) GoogleColors.Yellow else MaterialTheme.colorScheme.outline,
+                        tint = if (favourite) GoogleColors.Yellow.ink() else MaterialTheme.colorScheme.outline,
                     )
                 }
             }

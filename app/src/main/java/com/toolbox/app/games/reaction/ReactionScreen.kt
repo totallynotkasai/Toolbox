@@ -36,9 +36,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -77,6 +79,7 @@ fun reactionRating(ms: Long): String = when {
 private enum class Phase { Ready, Waiting, Go, Result, TooSoon, Done }
 
 private val DARK_TEXT = Color(0xFF202124)
+private val WAIT_RED = Color(0xFFC5221F)
 
 @Composable
 fun ReactionScreen(onBack: () -> Unit) {
@@ -129,10 +132,11 @@ fun ReactionScreen(onBack: () -> Unit) {
     }
 
     val round = (times.size + if (phase == Phase.Result) 0 else 1).coerceAtMost(REACTION_ROUNDS)
-    // Colours switch instantly: animating to green would blur the moment being measured.
+    // Colours switch instantly: animating to green would blur the moment being measured. The red and green are darker
+    // than Google's, so the white text on them is easy to read.
     val (panel, ink) = when (phase) {
-        Phase.Waiting -> GoogleColors.Red to Color.White
-        Phase.Go -> GoogleColors.Green to Color.White
+        Phase.Waiting -> WAIT_RED to Color.White
+        Phase.Go -> GoogleColors.GreenInk to Color.White
         Phase.TooSoon -> GoogleColors.Yellow to DARK_TEXT
         else -> GoogleColors.Blue to Color.White
     }
@@ -168,12 +172,22 @@ fun ReactionScreen(onBack: () -> Unit) {
                     }
                 }
                 .semantics {
-                    onClick("Tap") { currentOnTap(SystemClock.uptimeMillis()); true }
+                    role = Role.Button
+                    contentDescription = "Reaction panel"
+                    val label = when (phase) {
+                        Phase.Ready -> "Start"
+                        Phase.Waiting, Phase.Go -> "Tap"
+                        Phase.TooSoon -> "Try again"
+                        Phase.Result -> "Next round"
+                        Phase.Done -> "Play again"
+                    }
+                    onClick(label) { currentOnTap(SystemClock.uptimeMillis()); true }
                 },
             contentAlignment = Alignment.Center,
         ) {
+            // Read as one, so each change of phase is said whole.
             Column(
-                Modifier.padding(24.dp).semantics { liveRegion = LiveRegionMode.Assertive },
+                Modifier.padding(24.dp).semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Assertive },
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 when (phase) {
@@ -231,7 +245,7 @@ private fun Big(text: String, color: Color) =
 private fun Small(text: String, color: Color) =
     Text(
         text,
-        color = color.copy(alpha = 0.9f),
+        color = color,
         style = MaterialTheme.typography.titleMedium,
         textAlign = TextAlign.Center,
         modifier = Modifier.padding(top = 8.dp),

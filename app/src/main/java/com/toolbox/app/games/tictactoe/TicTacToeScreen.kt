@@ -41,6 +41,7 @@ import com.toolbox.app.ui.common.ScoreRow
 import com.toolbox.app.ui.common.ScoresMenu
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.rememberAnnouncer
 import com.toolbox.app.ui.common.rememberGameGuard
 import com.toolbox.app.ui.common.rememberGameMode
 import com.toolbox.app.ui.common.rememberHaptics
@@ -54,6 +55,7 @@ private val O_COLOR = GoogleColors.Blue
 @Composable
 fun TicTacToeScreen(onBack: () -> Unit) {
     val haptics = rememberHaptics()
+    val say = rememberAnnouncer()
     val guard = rememberGameGuard()
     var mode by rememberGameMode("tictactoe_mode")
     val tally = rememberTally("tictactoe_tally_${mode.key}")
@@ -101,7 +103,10 @@ fun TicTacToeScreen(onBack: () -> Unit) {
     LaunchedEffect(board, turn, mode) {
         if (cpuTurn) {
             delay(450)
-            play(aiMove(board))
+            val i = aiMove(board)
+            play(i)
+            // The mark is only drawn, so TalkBack users are told where it went.
+            say("Computer played row ${i / 3 + 1}, column ${i % 3 + 1}")
         }
     }
 
@@ -150,7 +155,7 @@ fun TicTacToeScreen(onBack: () -> Unit) {
 
 @Composable
 private fun Board(board: List<Int>, line: List<Int>?, enabled: Boolean, onTap: (Int) -> Unit) {
-    val grid = MaterialTheme.colorScheme.outlineVariant
+    val grid = MaterialTheme.colorScheme.outline
     val strike = MaterialTheme.colorScheme.onSurface
     val strikeProgress by animateFloatAsState(if (line != null) 1f else 0f, tween(400, delayMillis = 200), label = "strike")
     Box(Modifier.widthIn(max = 340.dp).fillMaxWidth().aspectRatio(1f)) {

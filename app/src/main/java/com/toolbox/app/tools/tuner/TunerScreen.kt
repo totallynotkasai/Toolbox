@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -42,13 +43,20 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.toolbox.app.ui.common.AnnounceOnStart
 import com.toolbox.app.ui.common.MicEffect
 import com.toolbox.app.ui.common.MicPermissionGate
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.theme.GoogleColors
+import com.toolbox.app.ui.theme.ink
+import com.toolbox.app.ui.theme.isLight
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
@@ -110,17 +118,22 @@ private fun TunerContent() {
     val needle by animateFloatAsState(cents.coerceIn(-50f, 50f), spring(dampingRatio = 0.8f, stiffness = 120f), label = "needle")
     val inTune = f != null && abs(cents) <= IN_TUNE_CENTS
     val accent by animateColorAsState(
-        when { f == null -> MaterialTheme.colorScheme.outline; inTune -> GoogleColors.Green; else -> GoogleColors.Red },
+        when { f == null -> MaterialTheme.colorScheme.outline; inTune -> GoogleColors.Green.ink(); else -> GoogleColors.Red.ink() },
         label = "accent",
     )
+    AnnounceOnStart(inTune && target != null, "In tune, " + (target?.let(::spokenNote) ?: ""))
 
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Instrument.entries.forEach { i -> FilterChip(selected = instrument == i, onClick = { instrument = i }, label = { Text(i.label) }) }
     }
     Spacer(Modifier.height(16.dp))
     // Mic level, so it's obvious whether the phone is hearing the instrument at all.
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Icon(Icons.Filled.Mic, contentDescription = "Input level", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    Row(
+        Modifier.semantics(mergeDescendants = true) { contentDescription = "Input level" },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(Icons.Filled.Mic, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         LinearProgressIndicator(
             progress = { inputLevel },
             modifier = Modifier.width(160.dp),
@@ -131,8 +144,10 @@ private fun TunerContent() {
 
     val track = MaterialTheme.colorScheme.surfaceContainerHighest
     val tickColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val centreTick = GoogleColors.Green.ink()
     Box(Modifier.widthIn(max = 360.dp).fillMaxWidth().aspectRatio(1.6f), contentAlignment = Alignment.BottomCenter) {
-        Canvas(Modifier.fillMaxWidth().aspectRatio(1.6f)) {
+        // Drawing only: the note and "Too low" or "Too high" below say what the needle shows.
+        Canvas(Modifier.fillMaxWidth().aspectRatio(1.6f).clearAndSetSemantics {}) {
             val pivot = Offset(size.width / 2, size.height * 0.95f)
             val r = min(size.width / 2, size.height) * 0.9f
             // Ticks every 10 cents across ±50, mapped to ±60°.
@@ -140,7 +155,7 @@ private fun TunerContent() {
                 rotate(c * 1.2f, pivot) {
                     val long = c == 0
                     drawLine(
-                        if (long) GoogleColors.Green else tickColor,
+                        if (long) centreTick else tickColor,
                         Offset(pivot.x, pivot.y - r),
                         Offset(pivot.x, pivot.y - r + (if (long) 28.dp else 14.dp).toPx()),
                         strokeWidth = (if (long) 4.dp else 2.dp).toPx(),
@@ -174,20 +189,33 @@ private fun TunerContent() {
 
     if (instrument != Instrument.Chromatic) {
         Spacer(Modifier.height(24.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        // Close enough together that a guitar's six fit across a small phone; they wrap rather than run off the edge.
+        // Light text on the darker light-mode accents, dark text on the bright dark-mode ones.
+        val onAccent = if (MaterialTheme.colorScheme.isLight) Color.White else Color.Black
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             instrument.strings.forEach { s ->
                 val active = s == target
                 Box(
                     Modifier.size(48.dp).clip(CircleShape)
-                        .background(if (active) accent else MaterialTheme.colorScheme.surfaceContainerHigh),
+                        .background(if (active) accent else MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .clearAndSetSemantics {
+                            contentDescription = spokenNote(s)
+                            if (active) stateDescription = "Current string"
+                        },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(s.name, color = if (active) Color.White else MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(4.dp))
+                    Text(s.name, color = if (active) onAccent else MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(4.dp))
                 }
             }
         }
     }
 }
+
+/** A note as TalkBack says it, such as "F sharp 2", rather than the sharp sign and octave run together. */
+internal fun spokenNote(note: Note): String = note.name.replace("♯", " sharp") + " " + note.octave
 
 private val MIC_SOURCES = intArrayOf(MediaRecorder.AudioSource.VOICE_RECOGNITION, MediaRecorder.AudioSource.MIC)
 

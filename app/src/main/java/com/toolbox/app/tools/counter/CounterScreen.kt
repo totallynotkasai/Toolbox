@@ -12,8 +12,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.RestartAlt
@@ -35,11 +37,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.edit
 import com.toolbox.app.ui.common.Prefs
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.rememberAnnouncer
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.common.rememberPref
 import kotlinx.coroutines.launch
@@ -67,11 +75,13 @@ fun CounterScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var count by rememberPref(key, 0)
+    val say = rememberAnnouncer()
 
     fun change(by: Int) {
         snackbar.currentSnackbarData?.dismiss() // counting again settles a reset
         count += by
         haptics.click()
+        say("$count")
     }
 
     fun reset() {
@@ -81,7 +91,10 @@ fun CounterScreen(onBack: () -> Unit) {
         scope.launch {
             snackbar.currentSnackbarData?.dismiss()
             val choice = snackbar.showSnackbar("Reset from $before", actionLabel = "Undo", duration = SnackbarDuration.Long)
-            if (choice == SnackbarResult.ActionPerformed) count = before
+            if (choice == SnackbarResult.ActionPerformed) {
+                count = before
+                say("$before")
+            }
         }
     }
 
@@ -99,9 +112,11 @@ fun CounterScreen(onBack: () -> Unit) {
                     .size(260.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.primaryContainer)
-                    .clickable(onClickLabel = "Count one") { change(1) },
+                    .clickable(onClickLabel = "Count one", role = Role.Button) { change(1) }
+                    .semantics { contentDescription = "Count, $count" },
                 contentAlignment = Alignment.Center,
             ) {
+                // Cleared, as mid-slide it holds both the old and the new number; the circle says the count instead.
                 AnimatedContent(
                     targetState = count,
                     transitionSpec = {
@@ -110,11 +125,16 @@ fun CounterScreen(onBack: () -> Unit) {
                             (slideOutVertically { if (up) -it else it } + fadeOut())
                     },
                     label = "count",
+                    modifier = Modifier.padding(horizontal = 24.dp).clearAndSetSemantics {},
                 ) {
+                    val style = MaterialTheme.typography.displayLarge
                     Text(
                         "$it",
-                        style = MaterialTheme.typography.displayLarge,
+                        style = style,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        maxLines = 1,
+                        softWrap = false,
+                        autoSize = TextAutoSize.StepBased(minFontSize = 20.sp, maxFontSize = style.fontSize),
                     )
                 }
             }

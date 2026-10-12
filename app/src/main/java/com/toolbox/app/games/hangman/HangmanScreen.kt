@@ -11,7 +11,10 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -27,6 +30,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AcUnit
@@ -34,8 +38,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -45,6 +49,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
@@ -64,12 +69,15 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.utf16CodePoint
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import androidx.compose.ui.unit.sp
@@ -91,6 +99,7 @@ import com.toolbox.app.ui.common.GameOverCard
 import com.toolbox.app.ui.common.NewGameButton
 import com.toolbox.app.ui.common.ScoresMenu
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.rememberAnnouncer
 import com.toolbox.app.ui.common.rememberGameGuard
 import com.toolbox.app.ui.common.rememberTally
 import com.toolbox.app.ui.common.rememberBestScore
@@ -115,6 +124,7 @@ private val SUN = Color(0xFFFFD54F)
 fun HangmanScreen(onBack: () -> Unit) {
     val resources = LocalResources.current
     val haptics = rememberHaptics()
+    val say = rememberAnnouncer()
     val guard = rememberGameGuard()
     val words = remember(resources) {
         HangmanState.parseWords(resources.openRawResource(R.raw.words).bufferedReader().use { it.readText() })
@@ -146,6 +156,7 @@ fun HangmanScreen(onBack: () -> Unit) {
         if (next === now) return
         val letters = next.guessed.joinToString("")
         if (twoPlayer) duoGuessed = letters else soloGuessed = letters
+        say(snowmanGuessText(next, c))
         when {
             next.won -> { haptics.heavy(); if (twoPlayer) duoTally.record(1) else { streak += 1; submitBest(streak) } }
             next.lost -> { haptics.heavy(); if (twoPlayer) duoTally.record(2) else streak = 0 }
@@ -268,7 +279,8 @@ fun HangmanScreen(onBack: () -> Unit) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
                     )
-                    Spacer(Modifier.height(12.dp))
+                    // The keys' touch areas reach 4dp past the keys, so this looks 12dp.
+                    Spacer(Modifier.height(8.dp))
                     Keyboard(state, onKey = ::guess)
                 }
             }
@@ -352,17 +364,33 @@ private fun LivesRow(left: Int, max: Int) {
     }
 }
 
+/** The word as TalkBack reads it: "C, blank, T". */
+internal fun spokenWord(state: HangmanState): String =
+    state.word.mapIndexed { i, c -> if (state.isRevealed(i)) c.uppercase() else "blank" }.joinToString(", ")
+
+/**
+ * What TalkBack says after [letter] is guessed, given the round as it now stands: "C is in the word. C, blank, T.
+ * 5 guesses left", or "Q is not in the word. 4 guesses left". Once the round is over the result card says the rest.
+ */
+internal fun snowmanGuessText(state: HangmanState, letter: Char): String {
+    val hit = letter.lowercaseChar() in state.word
+    val result = "${letter.uppercaseChar()} is ${if (hit) "" else "not "}in the word"
+    if (state.over) return result
+    val left = if (state.wrongLeft == 1) "1 guess left" else "${state.wrongLeft} guesses left"
+    return if (hit) "$result. ${spokenWord(state)}. $left" else "$result. $left"
+}
+
 @Composable
 private fun WordRow(state: HangmanState) {
     BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         val gap = 6.dp
         val n = state.word.length
         val cell = min(40.dp, (maxWidth - gap * (n - 1)) / n)
+        // Sized to the cell, which doesn't grow with the font size, so the letters mustn't either.
+        val letterSize = with(LocalDensity.current) { (cell * 0.7f).toSp() }
         Row(
             horizontalArrangement = Arrangement.spacedBy(gap),
-            modifier = Modifier.semantics(mergeDescendants = true) {
-                contentDescription = "Word: " + state.word.mapIndexed { i, c -> if (state.isRevealed(i)) c.uppercase() else "blank" }.joinToString(", ")
-            },
+            modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = "Word: " + spokenWord(state) },
         ) {
             state.word.forEachIndexed { i, c ->
                 val revealed = state.isRevealed(i)
@@ -370,7 +398,7 @@ private fun WordRow(state: HangmanState) {
                 Column(Modifier.width(cell), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         if (show) c.uppercase() else " ",
-                        fontSize = (cell.value * 0.7f).sp,
+                        fontSize = letterSize,
                         fontWeight = FontWeight.SemiBold,
                         color = when {
                             !revealed -> MaterialTheme.colorScheme.error
@@ -394,12 +422,13 @@ private fun WordRow(state: HangmanState) {
 @Composable
 private fun Keyboard(state: HangmanState, onKey: (Char) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val gap = 5.dp
-        val keyW = (maxWidth - gap * 9) / 10
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+        // Each key's touch area is a tenth of the width, so neighbours meet with no dead space between them; the gaps
+        // are drawn inside the keys instead.
+        val slot = maxWidth / 10
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
             KEY_ROWS.forEach { row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
-                    row.forEach { c -> Key(c, state.status(c), keyW, onKey) }
+                Row {
+                    row.forEach { c -> Key(c, state.status(c), slot, onKey) }
                 }
             }
         }
@@ -407,21 +436,21 @@ private fun Keyboard(state: HangmanState, onKey: (Char) -> Unit) {
 }
 
 @Composable
-private fun Key(c: Char, status: LetterStatus, width: androidx.compose.ui.unit.Dp, onKey: (Char) -> Unit) {
+private fun Key(c: Char, status: LetterStatus, width: Dp, onKey: (Char) -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val (bg, fg) = when (status) {
         LetterStatus.Unused -> scheme.surfaceContainerHighest to scheme.onSurface
-        LetterStatus.Hit -> GoogleColors.Green to Color.White
+        // White is too faint on Google green in either theme, so a hit key is the darker green.
+        LetterStatus.Hit -> GoogleColors.GreenInk to Color.White
         LetterStatus.Miss -> scheme.surfaceContainerHighest.copy(alpha = 0.45f) to scheme.onSurface.copy(alpha = 0.35f)
     }
-    Surface(
-        onClick = { onKey(c) },
-        enabled = status == LetterStatus.Unused,
-        shape = MaterialTheme.shapes.small,
-        color = bg,
-        modifier = Modifier
+    val interaction = remember { MutableInteractionSource() }
+    val style = MaterialTheme.typography.titleMedium
+    Box(
+        Modifier
             .width(width)
-            .height(52.dp)
+            .height(60.dp)
+            .clickable(interactionSource = interaction, indication = null, enabled = status == LetterStatus.Unused, role = Role.Button) { onKey(c) }
             .semantics {
                 contentDescription = "Letter ${c.uppercase()}"
                 stateDescription = when (status) {
@@ -429,11 +458,24 @@ private fun Key(c: Char, status: LetterStatus, width: androidx.compose.ui.unit.D
                     LetterStatus.Hit -> "In the word"
                     LetterStatus.Miss -> "Not in the word"
                 }
-            },
+            }
+            // The key as drawn: 52dp tall with 5dp between neighbours, as before the touch areas grew.
+            .padding(horizontal = 2.5.dp, vertical = 4.dp)
+            .clip(MaterialTheme.shapes.small)
+            .background(bg)
+            .indication(interaction, ripple()),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(c.uppercase(), color = fg, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
-        }
+        // Shrinks at large font sizes rather than being cut off by the narrow key.
+        Text(
+            c.uppercase(),
+            color = fg,
+            style = style,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            softWrap = false,
+            autoSize = TextAutoSize.StepBased(minFontSize = 12.sp, maxFontSize = style.fontSize),
+        )
     }
 }
 

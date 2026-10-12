@@ -57,6 +57,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -95,8 +96,16 @@ fun DateCalculatorScreen(onBack: () -> Unit) {
     ToolScaffold(title = "Date Calculator", onBack = onBack) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
             PrimaryTabRow(selectedTabIndex = tab, containerColor = MaterialTheme.colorScheme.surface) {
+                // Tabs with a text slot are a fixed height, which cuts "Add / subtract" off when large text wraps it.
                 TABS.forEachIndexed { i, title ->
-                    Tab(selected = tab == i, onClick = { tab = i }, text = { Text(title) })
+                    Tab(selected = tab == i, onClick = { tab = i }) {
+                        Text(
+                            title,
+                            style = MaterialTheme.typography.titleSmall,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                        )
+                    }
                 }
             }
             Column(
@@ -194,7 +203,7 @@ private fun AddTab(today: LocalDate) {
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = { amountText = ((amount ?: 0) - 1).coerceAtLeast(0).toString() }, enabled = (amount ?: 0) > 0) {
-            Icon(Icons.Filled.Remove, contentDescription = "Less")
+            Icon(Icons.Filled.Remove, contentDescription = "Decrease amount")
         }
         OutlinedTextField(
             value = amountText,
@@ -210,7 +219,7 @@ private fun AddTab(today: LocalDate) {
             modifier = Modifier.weight(1f),
         )
         IconButton(onClick = { amountText = ((amount ?: 0) + 1).coerceAtMost(999_999).toString() }) {
-            Icon(Icons.Filled.Add, contentDescription = "More")
+            Icon(Icons.Filled.Add, contentDescription = "Increase amount")
         }
     }
 
@@ -221,7 +230,7 @@ private fun AddTab(today: LocalDate) {
                 onClick = { haptics.tick(); step = s },
                 shape = SegmentedButtonDefaults.itemShape(i, DateStep.entries.size),
                 icon = {},
-            ) { Text(s.label, maxLines = 1) }
+            ) { Text(s.label, textAlign = TextAlign.Center) } // wraps rather than cutting off at large font sizes
         }
     }
 
@@ -288,7 +297,7 @@ private fun AgeTab(today: LocalDate) {
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.error,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
             )
             return@ResultCard
         }
@@ -379,7 +388,8 @@ private fun DateField(label: String, epochDay: Long, today: LocalDate, onPick: (
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {
             role = Role.Button
-            contentDescription = "$label, ${date.full()}. Tap to change."
+            contentDescription = "$label, ${date.full()}"
+            onClick(label = "Change") { open = true; true }
         },
     ) {
         Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {

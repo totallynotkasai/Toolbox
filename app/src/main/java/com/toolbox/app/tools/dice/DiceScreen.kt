@@ -33,9 +33,11 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import com.toolbox.app.tools.coin.hintLines
 import com.toolbox.app.ui.common.OnShake
 import com.toolbox.app.ui.common.SteadyText
 import com.toolbox.app.ui.common.ToolScaffold
@@ -44,6 +46,7 @@ import com.toolbox.app.ui.common.TossMode
 import com.toolbox.app.ui.common.TossModeToggle
 import com.toolbox.app.ui.common.TossTable
 import com.toolbox.app.ui.common.Vec3
+import com.toolbox.app.ui.common.rememberAnnouncer
 import com.toolbox.app.ui.common.rememberGameLoop
 import com.toolbox.app.ui.common.rememberPref
 import com.toolbox.app.ui.common.rememberShakeEnabled
@@ -85,6 +88,7 @@ fun DiceScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val vibes = rememberVibes()
     val synth = rememberToneSynth()
+    val say = rememberAnnouncer()
     var count by rememberPref(DICE_COUNT_KEY, 2)
     var sides by rememberPref(DICE_SIDES_KEY, 6)
     var mode by rememberTossMode("dice_mode")
@@ -170,6 +174,7 @@ fun DiceScreen(onBack: () -> Unit) {
         quick.setCount(n)
         result = null
         frame++
+        say("$n ${if (n == 1) "die" else "dice"}")
     }
 
     fun changeSides(n: Int) {
@@ -212,7 +217,7 @@ fun DiceScreen(onBack: () -> Unit) {
             stage = { modifier ->
                 if (mode == TossMode.Quick) {
                     TossTable(
-                        description = "$described. Tap to roll",
+                        description = described, // TalkBack adds "double tap to roll the dice"
                         tapLabel = "Roll the dice",
                         onSize = {},
                         onTap = ::roll,
@@ -269,7 +274,7 @@ fun DiceScreen(onBack: () -> Unit) {
                     else -> "Harder goes further. Or pick them up and flick"
                 },
                 style = MaterialTheme.typography.bodyMedium,
-                lines = 2,
+                lines = hintLines(LocalDensity.current.fontScale),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(12.dp))
@@ -280,6 +285,7 @@ fun DiceScreen(onBack: () -> Unit) {
                         onClick = { changeSides(n) },
                         enabled = !busy,
                         label = { Text("d$n") },
+                        modifier = Modifier.semantics { contentDescription = "$n-sided" },
                     )
                 }
             }

@@ -1,13 +1,14 @@
 package com.toolbox.app.toys.zip
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,11 +23,13 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -47,11 +50,22 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.Feel
 import com.toolbox.app.ui.common.Stat
+import com.toolbox.app.ui.common.StatRow
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.accessibilityActions
 import com.toolbox.app.ui.common.fixed
 import com.toolbox.app.ui.common.rememberGameLoop
 import com.toolbox.app.ui.common.rememberPcmStream
@@ -59,6 +73,8 @@ import com.toolbox.app.ui.common.rememberPref
 import com.toolbox.app.ui.common.rememberVibes
 import com.toolbox.app.ui.common.turnDelta
 import com.toolbox.app.ui.theme.GoogleColors
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.atan
 import kotlin.math.cos
@@ -80,6 +96,7 @@ private const val TRACK_TOP = 0.05f        // slider travel, as fractions of the
 private const val TRACK_BOTTOM = 0.8f
 private const val FAST_TEETH = 30f         // teeth/s above which ticks would smear; buzz instead
 private const val HEAD = 0.34f             // ratchet head radius, fraction of the half-size
+private const val ZIP_PULL_MS = 1200f      // a TalkBack pull from one end to the other, a brisk tug
 
 /**
  * Teeth per side for a zip whose slider travels [trackDp]: about [ZIP_TEETH] on a phone, fewer on a short zip so
@@ -105,6 +122,14 @@ internal fun boltDelta(delta: Float, clicksClockwise: Boolean): Float =
 
 /** Gear tooth the pawl sits behind; each change is one click. */
 internal fun pawlNotch(handle: Float, bolt: Float): Int = floor((handle - bolt) / RATCHET_STEP).toInt()
+
+/** How open the zip is at [pos], for TalkBack: in broad steps, so it isn't re-read at every tooth. */
+internal fun zipStateText(pos: Float): String = when {
+    pos <= 0f -> "Zipped up"
+    pos >= 1f -> "Wide open"
+    pos < 0.5f -> "Partly open"
+    else -> "Mostly open"
+}
 
 /** The frame loop's speed estimates, which never need a recomposition. */
 private class Rates {
@@ -132,7 +157,8 @@ fun ZipScreen(onBack: () -> Unit) {
 
     val audio = rememberPcmStream { ZipAudio() }
     val vibes = rememberVibes()
-
+    val scope = rememberCoroutineScope()
+    val slideJob = remember { mutableStateOf<Job?>(null) }
 
     fun flip() {
         clicksClockwise = !clicksClockwise
@@ -164,6 +190,47 @@ fun ZipScreen(onBack: () -> Unit) {
         held || rates.teeth > 0f || rates.bolt > 0f
     }
 
+    fun grabZip() {
+        slideJob.value?.cancel()
+        held = true
+        audio.grab()
+        vibes.tick(0.25f)
+        loop.wake()
+    }
+
+    fun moveZipTo(to: Float) {
+        val before = pos
+        val after = to.coerceIn(0f, 1f)
+        if (after != before) {
+            pos = after
+            val opening = after > before
+            val passed = abs(teethPassed(after, teeth) - teethPassed(before, teeth))
+            if (passed > 0) {
+                audio.opening = opening
+                repeat(min(passed, 3)) { audio.tooth(opening, it) }
+                if (!feel.fast) feel.space { vibes.tick(if (opening) 0.35f else 0.3f) }
+            }
+            if ((after == 1f || after == 0f) && before != after) {
+                audio.endStop()
+                vibes.thud(0.45f)
+                feel.mark()
+            }
+        }
+    }
+
+    // TalkBack's Unzip, Zip up and slider swipes: the tab is taken and run to [target] at a steady pull, so the teeth
+    // whirr and click past just as they do under a finger.
+    fun slideZip(target: Float) {
+        if (target == pos) return
+        grabZip()
+        val from = pos
+        val ms = (abs(target - from) * ZIP_PULL_MS).roundToInt().coerceAtLeast(150)
+        slideJob.value = scope.launch {
+            animate(from, target, animationSpec = tween(ms, easing = LinearEasing)) { v, _ -> moveZipTo(v) }
+            held = false
+        }
+    }
+
     ToolScaffold(title = "Zip & Ratchet", onBack = onBack) { padding ->
         Column(
             Modifier.fillMaxSize().padding(padding).padding(horizontal = 24.dp, vertical = 12.dp),
@@ -181,7 +248,7 @@ fun ZipScreen(onBack: () -> Unit) {
                             }
                         },
                         shape = SegmentedButtonDefaults.itemShape(i, ZipMode.entries.size),
-                    ) { Text(m.label, maxLines = 1) }
+                    ) { Text(m.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -191,32 +258,10 @@ fun ZipScreen(onBack: () -> Unit) {
                     held = held,
                     teeth = teeth,
                     onTrack = { trackDp -> teeth = zipTeeth(trackDp) },
-                    onGrab = {
-                        held = true
-                        audio.grab()
-                        vibes.tick(0.25f)
-                        loop.wake()
-                    },
+                    onGrab = { grabZip() },
                     onRelease = { held = false },
-                    onMove = { dPos ->
-                        val before = pos
-                        val after = (pos + dPos).coerceIn(0f, 1f)
-                        if (after != before) {
-                            pos = after
-                            val opening = after > before
-                            val passed = abs(teethPassed(after, teeth) - teethPassed(before, teeth))
-                            if (passed > 0) {
-                                audio.opening = opening
-                                repeat(min(passed, 3)) { audio.tooth(opening, it) }
-                                if (!feel.fast) feel.space { vibes.tick(if (opening) 0.35f else 0.3f) }
-                            }
-                            if ((after == 1f || after == 0f) && before != after) {
-                                audio.endStop()
-                                vibes.thud(0.45f)
-                                feel.mark()
-                            }
-                        }
-                    },
+                    onMove = { moveZipTo(pos + it) },
+                    onSlide = { slideZip(it) },
                 )
                 ZipMode.Ratchet -> RatchetPane(
                     handle = handle,
@@ -251,11 +296,20 @@ private fun ColumnScope.ZipPane(
     onGrab: () -> Unit,
     onRelease: () -> Unit,
     onMove: (Float) -> Unit,
+    onSlide: (Float) -> Unit,
 ) {
     val grab by rememberUpdatedState(onGrab)
     val release by rememberUpdatedState(onRelease)
     val move by rememberUpdatedState(onMove)
     val density = LocalDensity.current
+    // Only these coarse readings recompose the pane as it moves: TalkBack's state, and the position in tenths, which
+    // is also the step a swipe up or down moves it.
+    val said by remember { derivedStateOf { zipStateText(pos()) } }
+    val tenths by remember { derivedStateOf { (pos() * 10f).roundToInt() / 10f } }
+    val actions = buildList {
+        if (said != "Wide open") addAll(accessibilityActions("Unzip" to { onSlide(1f) }))
+        if (said != "Zipped up") addAll(accessibilityActions("Zip up" to { onSlide(0f) }))
+    }
     ZipStatus(pos, teeth)
     Spacer(Modifier.height(8.dp))
     Box(
@@ -265,6 +319,13 @@ private fun ColumnScope.ZipPane(
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .onSizeChanged { onTrack(with(density) { it.height.toDp().value } * (TRACK_BOTTOM - TRACK_TOP)) }
+            .semantics {
+                contentDescription = "Zip"
+                stateDescription = said
+                progressBarRangeInfo = ProgressBarRangeInfo(tenths, 0f..1f, steps = 9)
+                setProgress { v -> onSlide(((v * 10f).roundToInt() / 10f).coerceIn(0f, 1f)); true }
+                customActions = actions
+            }
             .pointerInput(Unit) {
                 // Drag anywhere: the slider follows the finger's vertical movement, not its position,
                 // so it never jumps when grabbed.
@@ -313,20 +374,32 @@ private fun ColumnScope.RatchetPane(
     onTurn: (Float) -> Unit,
     onFlip: () -> Unit,
 ) {
-    Row(horizontalArrangement = Arrangement.spacedBy(32.dp)) {
-        Stat("Bolt turns", fixed(bolt / 360f, 2), widest = "-00.00")
+    val boltTurns = fixed(bolt / 360f, 2)
+    StatRow {
+        Stat("Bolt turns", boltTurns, widest = "-00.00")
         Stat("Clicks", "$clicks")
     }
     val turn by rememberUpdatedState(onTurn)
     val flip by rememberUpdatedState(onFlip)
     val plate = MaterialTheme.colorScheme.surfaceVariant
     val marks = MaterialTheme.colorScheme.onSurfaceVariant
+    val (free, drive) = if (clicksClockwise) "clockwise" to "anticlockwise" else "anticlockwise" to "clockwise"
     Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
         Box(
             Modifier
                 .widthIn(max = 380.dp)
                 .fillMaxWidth()
                 .aspectRatio(1f)
+                .semantics {
+                    contentDescription = "Ratchet wrench"
+                    stateDescription = "Clicks $free, drives the bolt $drive. Bolt at $boltTurns turns"
+                    onClick(label = "Swap direction") { flip(); true }
+                    // One gear tooth of handle movement, as a drag would give.
+                    customActions = accessibilityActions(
+                        "Turn clockwise" to { turn(RATCHET_STEP) },
+                        "Turn anticlockwise" to { turn(-RATCHET_STEP) },
+                    )
+                }
                 .pointerInput(Unit) {
                     detectTapGestures { p ->
                         val c = Offset(size.width / 2f, size.height / 2f)
@@ -347,7 +420,6 @@ private fun ColumnScope.RatchetPane(
             Canvas(Modifier.fillMaxSize()) { drawRatchet(handle, bolt, clicksClockwise, plate, marks) }
         }
     }
-    val (free, drive) = if (clicksClockwise) "clockwise" to "anticlockwise" else "anticlockwise" to "clockwise"
     Text(
         "Turn the handle: it clicks freely $free and drives the bolt $drive. Tap the head to swap.",
         textAlign = TextAlign.Center,

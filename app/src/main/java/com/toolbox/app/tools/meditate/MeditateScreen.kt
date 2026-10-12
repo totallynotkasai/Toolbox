@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.Button
@@ -39,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -202,16 +204,23 @@ fun MeditateScreen(onBack: () -> Unit) {
                 widest = "00:00",
             )
             Spacer(Modifier.height(24.dp))
-            // The chips wrap onto another line at large font sizes rather than squeezing.
+            // The chips wrap onto another line at large font sizes rather than squeezing. Each group is named for
+            // TalkBack only, as on screen the chips speak for themselves.
             val chips = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
-            FlowRow(horizontalArrangement = chips) {
+            FlowRow(Modifier.selectableGroup().semantics { contentDescription = "Breathing pattern" }, horizontalArrangement = chips) {
                 Pattern.entries.forEach { p ->
                     FilterChip(selected = pattern == p, onClick = { pattern = p }, label = { Text(p.label) }, enabled = !running)
                 }
             }
-            FlowRow(horizontalArrangement = chips) {
+            FlowRow(Modifier.selectableGroup().semantics { contentDescription = "Session length" }, horizontalArrangement = chips) {
                 listOf(1, 2, 5, 10).forEach { m ->
-                    FilterChip(selected = minutes == m, onClick = { minutes = m }, label = { Text("$m min") }, enabled = !running)
+                    FilterChip(
+                        selected = minutes == m,
+                        onClick = { minutes = m },
+                        label = { Text("$m min") },
+                        enabled = !running,
+                        modifier = Modifier.semantics { contentDescription = if (m == 1) "1 minute" else "$m minutes" },
+                    )
                 }
             }
             Spacer(Modifier.height(24.dp))

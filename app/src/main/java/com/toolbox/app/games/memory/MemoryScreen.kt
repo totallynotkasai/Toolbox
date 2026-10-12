@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -50,10 +51,13 @@ import com.toolbox.app.ui.common.GameOver
 import com.toolbox.app.ui.common.NewGameButton
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.rememberAnnouncer
 import com.toolbox.app.ui.common.rememberBestScore
 import com.toolbox.app.ui.common.rememberGameGuard
 import com.toolbox.app.ui.common.rememberHaptics
+import com.toolbox.app.ui.common.rememberScreenReaderOn
 import com.toolbox.app.ui.theme.GoogleColors
+import com.toolbox.app.ui.theme.ink
 import kotlinx.coroutines.delay
 
 private const val COLS = 4
@@ -77,11 +81,23 @@ private val CardsSaver = Saver<List<Card>, IntArray>(
     restore = { saved -> saved.map { Card(it / 2, matched = it % 2 == 1) } },
 )
 
+/**
+ * What TalkBack says as a card turns over: its symbol, or on the second card of a turn whether the two match
+ * ("Star, match", "Heart and star, no match").
+ */
+internal fun memoryFlipText(first: String?, second: String): String = when (first) {
+    null -> second.replaceFirstChar { it.uppercase() }
+    second -> "${second.replaceFirstChar { it.uppercase() }}, match"
+    else -> "${first.replaceFirstChar { it.uppercase() }} and $second, no match"
+}
+
 private val OpenSaver = Saver<List<Int>, IntArray>(save = { it.toIntArray() }, restore = { it.toList() })
 
 @Composable
 fun MemoryScreen(onBack: () -> Unit) {
     val haptics = rememberHaptics()
+    val say = rememberAnnouncer()
+    val screenReader = rememberScreenReaderOn()
     val guard = rememberGameGuard()
     var cards by rememberSaveable(stateSaver = CardsSaver) { mutableStateOf(deal()) }
     var open by rememberSaveable(stateSaver = OpenSaver) { mutableStateOf(listOf<Int>()) }
@@ -98,6 +114,8 @@ fun MemoryScreen(onBack: () -> Unit) {
     fun tap(i: Int) {
         if (won || open.size == 2 || i in open || cards[i].matched) return
         haptics.click()
+        // The symbol is only drawn, so TalkBack users are told what turned up.
+        say(memoryFlipText(open.firstOrNull()?.let { SYMBOLS[cards[it].symbol].second }, SYMBOLS[cards[i].symbol].second))
         open = open + i
         if (open.size == 2) {
             moves++
@@ -114,9 +132,9 @@ fun MemoryScreen(onBack: () -> Unit) {
         }
     }
 
-    // Mismatch: leave both visible briefly, then flip them back.
+    // Mismatch: leave both visible briefly, then flip them back. Longer with TalkBack, so there's time to hear them.
     LaunchedEffect(open) {
-        if (open.size == 2) { delay(800); open = emptyList() }
+        if (open.size == 2) { delay(if (screenReader) 2000 else 800); open = emptyList() }
     }
 
     ToolScaffold(
@@ -125,7 +143,8 @@ fun MemoryScreen(onBack: () -> Unit) {
         actions = { NewGameButton(onClick = { guard.run(moves > 0 && !won) { newGame() } }, enabled = moves > 0 || open.isNotEmpty()) },
     ) { padding ->
         ToolBody(padding) {
-            Row(Modifier.widthIn(max = 360.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            // Wraps onto two lines at large font sizes rather than running the two together.
+            FlowRow(Modifier.widthIn(max = 360.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Moves $moves", style = MaterialTheme.typography.titleLarge)
                 if (best > 0) Text("Best $best", style = MaterialTheme.typography.titleLarge)
             }
@@ -168,7 +187,7 @@ private fun MemoryCard(card: Card, number: Int, faceUp: Boolean, modifier: Modif
     val rotation by animateFloatAsState(if (faceUp) 180f else 0f, tween(300), label = "flip")
     val back = MaterialTheme.colorScheme.primary
     val front = if (card.matched) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest
-    val tint = GoogleColors.all[card.symbol % 4]
+    val tint = GoogleColors.all[card.symbol % 4].ink()
     val (icon, name) = SYMBOLS[card.symbol]
     Box(
         modifier

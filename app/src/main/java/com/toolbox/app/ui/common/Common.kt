@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -38,12 +39,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.edit
 import com.toolbox.app.Favourites
 import com.toolbox.app.ui.theme.GoogleColors
+import com.toolbox.app.ui.theme.ink
 
 /** Route of the tool on screen, provided by the nav host so [ToolScaffold] can show its favourite star. */
 val LocalToolRoute = staticCompositionLocalOf<String?> { null }
@@ -58,10 +64,24 @@ fun ToolScaffold(
     snackbarHost: @Composable () -> Unit = {},
     content: @Composable (PaddingValues) -> Unit,
 ) {
+    // The pane title has TalkBack say which screen opened.
     Scaffold(
+        modifier = Modifier.semantics { paneTitle = title },
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = {
+                    // At large font sizes a long title shrinks to fit between the buttons rather than being cut short.
+                    val style = MaterialTheme.typography.titleLarge
+                    Text(
+                        title,
+                        style = style,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                        autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = style.fontSize),
+                        modifier = Modifier.semantics { heading() },
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -94,7 +114,7 @@ fun FavouriteButton(route: String, modifier: Modifier = Modifier) {
         Icon(
             if (on) Icons.Filled.Star else Icons.Filled.StarBorder,
             contentDescription = if (on) "Remove from favourites" else "Add to favourites",
-            tint = if (on) GoogleColors.Yellow else MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = if (on) GoogleColors.Yellow.ink() else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
