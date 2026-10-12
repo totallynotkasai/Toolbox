@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Backups on Android 8 to 11. The step counter's state holds counter values that only mean something on this
-     phone and since its last boot, so restoring them would credit thousands of steps to one day. -->
+     phone and since its last boot, so restoring them would credit thousands of steps to one day. The stopwatch's is
+     timed against this phone's clocks too, so a restored one would count from the day it was backed up. -->
 <full-backup-content>
     <exclude domain="sharedpref" path="steps.xml" />
+    <exclude domain="sharedpref" path="stopwatch.xml" />
 </full-backup-content>

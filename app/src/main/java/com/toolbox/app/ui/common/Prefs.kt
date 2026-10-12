@@ -5,8 +5,11 @@ import android.content.SharedPreferences
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.State
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.edit
 
@@ -122,4 +125,21 @@ private class EnumPrefState<E>(
 
     override fun component1(): E = value
     override fun component2(): (E) -> Unit = { value = it }
+}
+
+/**
+ * A value worked out by [read] from [prefs], read again whenever anything in them changes. For tools that keep their
+ * own preferences file and are changed from outside the screen too, such as by a notification button.
+ */
+@Composable
+fun <T> rememberStored(prefs: SharedPreferences, read: () -> T): State<T> {
+    val currentRead by rememberUpdatedState(read)
+    val state = remember(prefs) { mutableStateOf(read()) }
+    DisposableEffect(prefs) {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> state.value = currentRead() }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        state.value = currentRead() // Catch writes made while not listening.
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    return state
 }
