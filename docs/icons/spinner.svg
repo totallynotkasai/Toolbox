@@ -1,0 +1,5 @@
+<!-- Spinner: generated from ToolIcons.kt by ToolIconsTest. Edit the Kotlin, not this file. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+  <path d="M12,12V3A9,9 0 0,0 3,12ZM12,12V21A9,9 0 0,0 21,12Z"/>
+  <path d="M3,12a9,9 0 1,1 18,0a9,9 0 1,1 -18,0ZM12,3V21M3,12H21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

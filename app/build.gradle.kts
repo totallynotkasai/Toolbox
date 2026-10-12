@@ -31,6 +31,14 @@ android {
     }
 }
 
+// ToolIconsTest checks the website's icons in docs/icons against ToolIcons; `-PupdateIcons` rewrites them instead.
+tasks.withType<Test>().configureEach {
+    val icons = rootProject.file("docs/icons")
+    systemProperty("iconsDir", icons.path)
+    systemProperty("updateIcons", providers.gradleProperty("updateIcons").isPresent)
+    if (icons.isDirectory) inputs.dir(icons).withPropertyName("websiteIcons")
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.core.splashscreen)
