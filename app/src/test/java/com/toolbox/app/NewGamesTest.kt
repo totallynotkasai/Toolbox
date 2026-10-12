@@ -184,6 +184,21 @@ class BattleshipsTest {
         assertFalse(Fleet.isValid(listOf(Ship(3, 0, 0, true), Ship(3, 1, 0, false))))
     }
 
+    /** Whether any two ships sit side by side or corner to corner. */
+    private fun touching(ships: List<Ship>): Boolean = ships.indices.any { i ->
+        (i + 1 until ships.size).any { j ->
+            ships[i].cells.any { a -> ships[j].cells.any { b -> maxOf(kotlin.math.abs(a % GRID - b % GRID), kotlin.math.abs(a / GRID - b / GRID)) <= 1 } }
+        }
+    }
+
+    @Test fun spacedFleetsNeverTouchButTheComputersCan() {
+        repeat(100) { assertFalse(touching(Fleet.random(Random(it)))) }
+        val loose = List(100) { Fleet.random(Random(it), spaced = false) }
+        loose.forEach { assertTrue(Fleet.isValid(it)); assertEquals(Fleet.LENGTHS, it.map { s -> s.length }) }
+        // Five ships placed freely on a 10 × 10 grid touch more often than not.
+        assertTrue(loose.count(::touching) > 30)
+    }
+
     @Test fun firingHitsMissesAndSinks() {
         var b = Board(listOf(Ship(2, 0, 0, true), Ship(3, 5, 5, false)))
         val (b1, r1) = b.fire(cellOf(9, 9))!!

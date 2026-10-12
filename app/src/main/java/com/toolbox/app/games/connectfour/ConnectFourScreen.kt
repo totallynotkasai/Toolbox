@@ -8,10 +8,8 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,21 +20,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Undo
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -62,18 +51,27 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.toolbox.app.ui.common.GameFooter
+import com.toolbox.app.ui.common.GameGuardDialog
+import com.toolbox.app.ui.common.GameMode
+import com.toolbox.app.ui.common.GameModeChips
+import com.toolbox.app.ui.common.GameOver
+import com.toolbox.app.ui.common.NewGameButton
+import com.toolbox.app.ui.common.Score
+import com.toolbox.app.ui.common.ScoreRow
+import com.toolbox.app.ui.common.ScoresMenu
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.rememberGameGuard
+import com.toolbox.app.ui.common.rememberGameMode
+import com.toolbox.app.ui.common.rememberTally
 import com.toolbox.app.ui.common.rememberHaptics
-import com.toolbox.app.ui.common.rememberPref
 import com.toolbox.app.ui.theme.GoogleColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -83,35 +81,19 @@ import kotlinx.coroutines.withContext
 import androidx.compose.runtime.snapshotFlow
 import kotlin.math.sqrt
 
-private enum class Mode(val label: String, val vsComputer: Boolean) {
-    // "Easy" is kept as the name because saved settings and win counts use it.
-    Easy("Solo", true), TwoPlayer("2 players", false)
-}
-
 private val RED = GoogleColors.Red
 private val YELLOW = GoogleColors.Yellow
 private fun discColor(player: Int) = if (player == 1) RED else YELLOW
 private fun colorName(player: Int) = if (player == 1) "Red" else "Yellow"
 
-/** Win tallies per mode as "a,b,draws": you/CPU against the computer, red/yellow for two players. */
-private data class Tally(val a: Int = 0, val b: Int = 0, val draws: Int = 0) {
-    fun encode() = "$a,$b,$draws"
-    companion object {
-        fun decode(s: String): Tally {
-            val p = s.split(',').mapNotNull { it.toIntOrNull() }
-            return if (p.size == 3) Tally(p[0], p[1], p[2]) else Tally()
-        }
-    }
-}
-
 @Composable
 fun ConnectFourScreen(onBack: () -> Unit) {
     val haptics = rememberHaptics()
     val scope = rememberCoroutineScope()
-    var modeName by rememberPref("connect4_mode", Mode.Easy.name)
-    val mode = Mode.entries.firstOrNull { it.name == modeName } ?: Mode.Easy
-    var tallyPref by rememberPref("connect4_tally_${mode.name}", "")
-    val tally = Tally.decode(tallyPref)
+    val guard = rememberGameGuard()
+    var mode by rememberGameMode("connect4_mode")
+    // Per mode, as "a,b,draws": you/CPU against the computer, red/yellow for two players.
+    val tally = rememberTally("connect4_tally_${mode.key}")
 
     var moves by rememberSaveable { mutableStateOf(listOf<Int>()) }
     var cpuFirst by rememberSaveable { mutableStateOf(false) } // alternates each game against the computer
@@ -120,6 +102,8 @@ fun ConnectFourScreen(onBack: () -> Unit) {
     val over = win != null || board.isFull
     val cpuPlayer = if (!mode.vsComputer) 0 else if (cpuFirst) 1 else 2
     val cpuTurn = !over && board.toMove == cpuPlayer
+    // You have a disc on the board: any move in two-player games, any but the computer's opening one otherwise.
+    val underWay = !over && moves.size > (if (cpuPlayer == 1) 1 else 0)
 
     // The newest disc falls in; everything else is drawn in place.
     val drop = remember { Animatable(Float.MAX_VALUE) } // ms since the drop started
@@ -127,18 +111,13 @@ fun ConnectFourScreen(onBack: () -> Unit) {
     var dropping by remember { mutableStateOf(false) }
     var thinking by remember { mutableStateOf(false) }
     var hover by remember { mutableIntStateOf(-1) }
-    var menu by remember { mutableStateOf(false) }
 
+    /** Adds a finished game to the tally: side a is you (or red), side b the computer (or yellow). */
     fun record(finished: ConnectFour, line: List<Int>?) {
-        val t = tally
-        tallyPref = when {
-            line == null -> t.copy(draws = t.draws + 1)
-            else -> {
-                val winner = finished[line[0] % COLS, line[0] / COLS]
-                val first = if (!mode.vsComputer) winner == 1 else winner != cpuPlayer
-                if (first) t.copy(a = t.a + 1) else t.copy(b = t.b + 1)
-            }
-        }.encode()
+        if (line == null) { tally.record(0); return }
+        val winner = finished[line[0] % COLS, line[0] / COLS]
+        val first = if (!mode.vsComputer) winner == 1 else winner != cpuPlayer
+        tally.record(if (first) 1 else 2)
     }
 
     fun play(col: Int) {
@@ -146,6 +125,11 @@ fun ConnectFourScreen(onBack: () -> Unit) {
         val rowsFallen = ROWS - board.height(col) // from the row above the board down to its landing row
         val next = moves + col
         moves = next
+        // The result is counted straight away, so leaving during the last drop can't lose it. Only the thud waits.
+        val after = ConnectFour.fromMoves(next)
+        val line = after.winLine()
+        val finished = line != null || after.isFull
+        if (finished) record(after, line)
         dropping = true
         scope.launch {
             val (impact, total) = dropTimes(rowsFallen)
@@ -155,21 +139,24 @@ fun ConnectFourScreen(onBack: () -> Unit) {
             haptics.click()
             drop.animateTo(total, tween((total - impact).toInt(), easing = LinearEasing))
             dropping = false
-            if (moves != next) return@launch // the game was reset or the mode changed mid-drop
-            val after = ConnectFour.fromMoves(next)
-            val line = after.winLine()
-            if (line != null || after.isFull) {
-                record(after, line)
-                haptics.heavy()
-            }
+            if (finished && moves == next) haptics.heavy()
         }
     }
 
-    fun newGame() {
-        if (mode.vsComputer && moves.isNotEmpty()) cpuFirst = !cpuFirst
-        moves = emptyList()
+    fun clearDrop() {
         scope.launch { drop.snapTo(Float.MAX_VALUE) }
         dropping = false
+    }
+
+    fun newGame(nextMode: GameMode = mode) {
+        cpuFirst = when {
+            nextMode != mode -> false
+            nextMode.vsComputer && moves.isNotEmpty() -> !cpuFirst
+            else -> cpuFirst
+        }
+        mode = nextMode
+        moves = emptyList()
+        clearDrop()
     }
 
     fun undo() {
@@ -177,8 +164,7 @@ fun ConnectFourScreen(onBack: () -> Unit) {
         var m = moves.dropLast(1)
         // Against the computer, go back to your own turn.
         while (m.isNotEmpty() && cpuPlayer != 0 && (if (m.size % 2 == 0) 1 else 2) == cpuPlayer) m = m.dropLast(1)
-        scope.launch { drop.snapTo(Float.MAX_VALUE) }
-        dropping = false
+        clearDrop()
         moves = m
     }
 
@@ -187,14 +173,19 @@ fun ConnectFourScreen(onBack: () -> Unit) {
         if (!cpuTurn) return@LaunchedEffect
         snapshotFlow { dropping }.first { !it }
         thinking = true
-        val started = System.currentTimeMillis()
-        val col = withContext(Dispatchers.Default) { aiMove(board.copy()) }
-        delay((450 - (System.currentTimeMillis() - started)).coerceAtLeast(0))
-        thinking = false
+        val col = try {
+            val started = System.currentTimeMillis()
+            val best = withContext(Dispatchers.Default) { aiMove(board.copy()) }
+            delay((450 - (System.currentTimeMillis() - started)).coerceAtLeast(0))
+            best
+        } finally {
+            thinking = false // also when Undo, New game or a mode change cancels the search
+        }
         play(col)
     }
 
-    val canUndo = !over && !dropping && moves.any() && (cpuPlayer == 0 || moves.size > if (cpuFirst) 1 else 0)
+    // Not during the computer's turn either, as its move would land straight after.
+    val canUndo = !over && !dropping && !cpuTurn && moves.any() && (cpuPlayer == 0 || moves.size > if (cpuFirst) 1 else 0)
     ToolScaffold(
         title = "Connect Four",
         onBack = onBack,
@@ -202,39 +193,21 @@ fun ConnectFourScreen(onBack: () -> Unit) {
             IconButton(onClick = ::undo, enabled = canUndo) {
                 Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo")
             }
-            Box {
-                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More") }
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text("Reset scores") }, onClick = { tallyPref = Tally().encode(); menu = false })
-                }
-            }
+            NewGameButton(onClick = { guard.run(underWay) { newGame() } }, enabled = moves.isNotEmpty() && !dropping)
+            ScoresMenu(onReset = tally::reset)
         },
     ) { padding ->
         Column(
             Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (m in Mode.entries) {
-                    FilterChip(
-                        selected = mode == m,
-                        onClick = { if (mode != m) { modeName = m.name; moves = emptyList(); cpuFirst = false } },
-                        label = { Text(m.label) },
-                    )
-                }
-            }
+            GameModeChips(mode, onSelect = { m -> guard.run(underWay) { newGame(m) } })
             Spacer(Modifier.height(12.dp))
-            Row(Modifier.widthIn(max = 400.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                if (mode.vsComputer) {
-                    Score("You", tally.a, discColor(3 - cpuPlayer))
-                    Score("Draws", tally.draws, null)
-                    Score("CPU", tally.b, discColor(cpuPlayer))
-                } else {
-                    Score("Red", tally.a, RED)
-                    Score("Draws", tally.draws, null)
-                    Score("Yellow", tally.b, YELLOW)
-                }
-            }
+            val t = tally.value
+            ScoreRow(
+                if (mode.vsComputer) listOf(Score("You", t.a, discColor(3 - cpuPlayer)), Score("Draws", t.draws), Score("CPU", t.b, discColor(cpuPlayer)))
+                else listOf(Score("Red", t.a, RED), Score("Draws", t.draws), Score("Yellow", t.b, YELLOW)),
+            )
             Spacer(Modifier.height(12.dp))
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 val inputEnabled = !over && !dropping && !cpuTurn
@@ -252,7 +225,8 @@ fun ConnectFourScreen(onBack: () -> Unit) {
                 )
             }
             Spacer(Modifier.height(12.dp))
-            val status = when {
+            // The result shows once the last disc has landed.
+            val result = when {
                 dropping -> null
                 win != null -> {
                     val winner = board[win[0] % COLS, win[0] / COLS]
@@ -263,37 +237,25 @@ fun ConnectFourScreen(onBack: () -> Unit) {
                     }
                 }
                 board.isFull -> "It's a draw"
-                thinking || cpuTurn -> "Thinking…"
-                !mode.vsComputer -> "${colorName(board.toMove)}'s turn"
-                moves.isEmpty() && cpuFirst -> "Your turn"
-                moves.isEmpty() -> "You go first"
-                else -> "Your turn"
+                else -> null
             }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(32.dp).semantics { liveRegion = LiveRegionMode.Polite }) {
-                if (status != null && !over) {
-                    Box(Modifier.size(16.dp).background(discColor(board.toMove), CircleShape))
-                    Spacer(Modifier.width(8.dp))
-                }
-                Text(status ?: "", style = MaterialTheme.typography.titleLarge)
-            }
-            Spacer(Modifier.height(8.dp))
-            Button(onClick = ::newGame, enabled = !dropping) { Text(if (over) "Play again" else "New game") }
+            GameFooter(
+                over = result?.let {
+                    GameOver(it, if (!mode.vsComputer) null else if (cpuFirst) "You start the next game" else "The computer starts the next game")
+                },
+                turn = when {
+                    dropping || over -> " "
+                    thinking || cpuTurn -> "Thinking…"
+                    !mode.vsComputer -> "${colorName(board.toMove)}'s turn"
+                    moves.isEmpty() -> "You go first"
+                    else -> "Your turn"
+                },
+                turnColor = if (dropping || over) null else discColor(board.toMove),
+                onPlayAgain = { newGame() },
+            )
         }
     }
-}
-
-@Composable
-private fun Score(label: String, value: Int, color: Color?) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("$value", style = MaterialTheme.typography.headlineMedium)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (color != null) {
-                Box(Modifier.size(10.dp).background(color, CircleShape))
-                Spacer(Modifier.width(6.dp))
-            }
-            Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
+    GameGuardDialog(guard)
 }
 
 /** Gravity for a falling disc, in cells per ms²: six cells in about 360 ms. */

@@ -49,6 +49,9 @@ data class HangmanState(val word: String, val guessed: Set<Char> = emptySet(), v
             .distinct()
             .toList()
 
+        /** Whether [s] can be played: lowercase a–z only, as a saved word must be before it's brought back. */
+        fun isWord(s: String): Boolean = s.isNotEmpty() && s.all { it in 'a'..'z' }
+
         /** Length limits for a word typed in by the other player in two-player mode. */
         val CUSTOM_LENGTH = 3..12
 

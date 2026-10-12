@@ -3,7 +3,6 @@ package com.toolbox.app.games.dotsboxes
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,16 +14,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Undo
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,14 +36,21 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import com.toolbox.app.ui.common.ScoreColumn
-import com.toolbox.app.ui.common.Tally
+import com.toolbox.app.ui.common.GameFooter
+import com.toolbox.app.ui.common.GameGuardDialog
+import com.toolbox.app.ui.common.GameMode
+import com.toolbox.app.ui.common.GameModeChips
+import com.toolbox.app.ui.common.GameOver
+import com.toolbox.app.ui.common.NewGameButton
+import com.toolbox.app.ui.common.Score
+import com.toolbox.app.ui.common.ScoreRow
+import com.toolbox.app.ui.common.ScoresMenu
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.rememberGameGuard
+import com.toolbox.app.ui.common.rememberGameMode
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.common.rememberPref
 import com.toolbox.app.ui.common.rememberTally
@@ -60,11 +59,6 @@ import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.roundToInt
-
-private enum class Mode(val label: String, val vsComputer: Boolean) {
-    // "Easy" is kept as the name because saved settings and win counts use it.
-    Easy("Solo", true), TwoPlayer("2 players", false)
-}
 
 /** Boxes along each side. */
 private val SIZES = listOf(3, 4, 5)
@@ -75,19 +69,21 @@ private fun playerName(p: Int) = if (p == 1) "Blue" else "Red"
 @Composable
 fun DotsBoxesScreen(onBack: () -> Unit) {
     val haptics = rememberHaptics()
-    var modeName by rememberPref("dots_mode", Mode.Easy.name)
-    val mode = Mode.entries.firstOrNull { it.name == modeName } ?: Mode.Easy
+    val guard = rememberGameGuard()
+    var mode by rememberGameMode("dots_mode")
     var size by rememberPref("dots_size", 4)
-    val (tally, setTally) = rememberTally("dots_tally_${mode.name}")
+    val tally = rememberTally("dots_tally_${mode.key}")
     var moves by rememberSaveable { mutableStateOf(listOf<Int>()) }
     var cpuFirst by rememberSaveable { mutableStateOf(false) } // alternates each game against the computer
-    var menu by remember { mutableStateOf(false) }
     val game = remember(moves, size) { DotsBoxes.fromMoves(size, size, moves) }
     val cpu = if (!mode.vsComputer) 0 else if (cpuFirst) 1 else 2
     val human = if (cpu == 0) 0 else 3 - cpu
     val cpuTurn = !game.isOver && game.toMove == cpu
+    // You have drawn a line: any move in two-player games, any but the computer's opening one otherwise. (No box
+    // can be closed on the first move, so the computer never opens with more than one.)
+    val underWay = !game.isOver && moves.size > (if (cpu == 1) 1 else 0)
 
-    // The newest line (and any boxes it closed) animates in.
+    // The newest line (and any boxes it closed) animates in. Only the board's drawing reads it.
     val appear = remember { Animatable(1f) }
     LaunchedEffect(moves.size) {
         if (moves.isEmpty()) { appear.snapTo(1f); return@LaunchedEffect }
@@ -104,15 +100,21 @@ fun DotsBoxesScreen(onBack: () -> Unit) {
                 haptics.heavy()
                 val w = next.winner
                 // In tallies against the computer, side a is you.
-                setTally(tally.record(if (cpu == 0 || w == 0) w else if (w == human) 1 else 2))
+                tally.record(if (cpu == 0 || w == 0) w else if (w == human) 1 else 2)
             }
             next.score(game.toMove) > game.score(game.toMove) -> haptics.click()
             else -> haptics.tick()
         }
     }
 
-    fun newGame() {
-        if (cpu != 0 && moves.isNotEmpty()) cpuFirst = !cpuFirst
+    fun newGame(nextMode: GameMode = mode, nextSize: Int = size) {
+        cpuFirst = when {
+            nextMode != mode -> false
+            nextMode.vsComputer && moves.isNotEmpty() -> !cpuFirst
+            else -> cpuFirst
+        }
+        mode = nextMode
+        size = nextSize
         moves = emptyList()
     }
 
@@ -132,53 +134,46 @@ fun DotsBoxesScreen(onBack: () -> Unit) {
         play(dotsMove(game))
     }
 
-    val canUndo = !game.isOver && moves.isNotEmpty() && !cpuTurn &&
-        (cpu == 0 || (0 until moves.size).any { DotsBoxes.fromMoves(size, size, moves.take(it)).toMove == human })
+    // Replaying every earlier position is the slow part, so it's only redone when a move is made.
+    val canUndo = remember(game, cpu) {
+        !game.isOver && moves.isNotEmpty() && !cpuTurn &&
+            (cpu == 0 || (0 until moves.size).any { DotsBoxes.fromMoves(size, size, moves.take(it)).toMove == human })
+    }
     ToolScaffold(
         title = "Dots and Boxes",
         onBack = onBack,
         actions = {
             IconButton(onClick = ::undo, enabled = canUndo) { Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo") }
-            Box {
-                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More") }
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text("Reset scores") }, onClick = { setTally(Tally()); menu = false })
-                }
-            }
+            NewGameButton(onClick = { guard.run(underWay) { newGame() } }, enabled = moves.isNotEmpty())
+            ScoresMenu(onReset = tally::reset)
         },
     ) { padding ->
         Column(
             Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (m in Mode.entries) {
-                    FilterChip(
-                        selected = mode == m,
-                        onClick = { if (mode != m) { modeName = m.name; moves = emptyList(); cpuFirst = false } },
-                        label = { Text(m.label) },
-                    )
-                }
-            }
+            GameModeChips(mode, onSelect = { m -> guard.run(underWay) { newGame(nextMode = m) } })
             Spacer(Modifier.height(4.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (s in SIZES) {
                     FilterChip(
                         selected = size == s,
-                        onClick = { if (size != s) { size = s; moves = emptyList() } },
+                        onClick = { if (size != s) guard.run(underWay) { newGame(nextSize = s) } },
                         label = { Text("$s × $s") },
                     )
                 }
             }
             Spacer(Modifier.height(12.dp))
             // This game's boxes, then the running tally underneath.
-            Row(Modifier.widthIn(max = 400.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                ScoreColumn(if (cpu == 0) "Blue" else if (human == 1) "You" else "CPU", game.score(1), playerColor(1))
-                ScoreColumn(if (cpu == 0) "Red" else if (human == 2) "You" else "CPU", game.score(2), playerColor(2))
-            }
+            ScoreRow(
+                listOf(
+                    Score(if (cpu == 0) "Blue" else if (human == 1) "You" else "CPU", game.score(1), playerColor(1)),
+                    Score(if (cpu == 0) "Red" else if (human == 2) "You" else "CPU", game.score(2), playerColor(2)),
+                ),
+            )
+            val t = tally.value
             Text(
-                if (cpu == 0) "Games: Blue ${tally.a} · Red ${tally.b} · Drawn ${tally.draws}"
-                else "Games: You ${tally.a} · CPU ${tally.b} · Drawn ${tally.draws}",
+                if (cpu == 0) t.summary("Games", "Blue", "Red") else t.summary("Games", "You", "CPU"),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -186,47 +181,40 @@ fun DotsBoxesScreen(onBack: () -> Unit) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Board(
                     game = game,
-                    appear = appear.value,
+                    appear = { appear.value },
                     enabled = !game.isOver && !cpuTurn,
                     onLine = ::play,
                     modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth().aspectRatio(1f),
                 )
             }
             Spacer(Modifier.height(8.dp))
-            val status = when {
-                game.isOver -> when {
-                    game.winner == 0 -> "It's a draw"
-                    cpu == 0 -> "${playerName(game.winner)} wins!"
-                    game.winner == human -> "You win!"
-                    else -> "The computer wins"
-                }
-                cpuTurn -> "Computer's turn"
-                cpu == 0 -> "${playerName(game.toMove)}'s turn"
-                else -> "Your turn"
+            val result = when {
+                !game.isOver -> null
+                game.winner == 0 -> "It's a draw"
+                cpu == 0 -> "${playerName(game.winner)} wins!"
+                game.winner == human -> "You win!"
+                else -> "The computer wins"
             }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.height(32.dp).semantics { liveRegion = LiveRegionMode.Polite },
-            ) {
-                if (!game.isOver) {
-                    Box(Modifier.size(16.dp).background(playerColor(game.toMove), CircleShape))
-                    Spacer(Modifier.width(8.dp))
-                }
-                Text(status, style = MaterialTheme.typography.titleLarge)
-            }
-            Text(
-                if (moves.isEmpty()) "Close a box to score and go again" else " ",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            GameFooter(
+                over = result?.let {
+                    GameOver(it, if (cpu == 0) null else if (cpuFirst) "You start the next game" else "The computer starts the next game")
+                },
+                turn = when {
+                    cpuTurn -> "Computer's turn"
+                    cpu == 0 -> "${playerName(game.toMove)}'s turn"
+                    else -> "Your turn"
+                },
+                turnColor = playerColor(game.toMove),
+                hint = if (moves.isEmpty()) "Close a box to score and go again" else " ",
+                onPlayAgain = { newGame() },
             )
-            Spacer(Modifier.height(8.dp))
-            Button(onClick = ::newGame) { Text(if (game.isOver) "Play again" else "New game") }
         }
     }
+    GameGuardDialog(guard)
 }
 
 @Composable
-private fun Board(game: DotsBoxes, appear: Float, enabled: Boolean, onLine: (Int) -> Unit, modifier: Modifier) {
+private fun Board(game: DotsBoxes, appear: () -> Float, enabled: Boolean, onLine: (Int) -> Unit, modifier: Modifier) {
     val guide = MaterialTheme.colorScheme.outlineVariant
     val dot = MaterialTheme.colorScheme.onSurface
     val last = game.moves.lastOrNull()
@@ -259,7 +247,7 @@ private fun Board(game: DotsBoxes, appear: Float, enabled: Boolean, onLine: (Int
         for (r in 0 until game.rows) for (c in 0 until game.cols) {
             val owner = game.boxOwner(r, c)
             if (owner == 0) continue
-            val grow = if (r * game.cols + c in justClosed) appear else 1f
+            val grow = if (r * game.cols + c in justClosed) appear() else 1f
             val inset = cell * (0.12f + 0.3f * (1 - grow))
             val tl = dotAt(r, c) + Offset(inset, inset)
             drawRoundRect(
@@ -276,7 +264,7 @@ private fun Board(game: DotsBoxes, appear: Float, enabled: Boolean, onLine: (Int
                 drawLine(guide, p0, p1, strokeWidth = stroke * 0.3f, cap = StrokeCap.Round)
             } else {
                 // The newest line draws itself out from the middle.
-                val t = if (line == last) appear else 1f
+                val t = if (line == last) appear() else 1f
                 val mid = (p0 + p1) / 2f
                 drawLine(
                     playerColor(owner), mid + (p0 - mid) * t, mid + (p1 - mid) * t,

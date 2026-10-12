@@ -2,6 +2,7 @@ package com.toolbox.app
 
 import com.toolbox.app.games.tictactoe.aiMove
 import com.toolbox.app.games.tictactoe.bestMove
+import com.toolbox.app.games.tictactoe.firstTurn
 import com.toolbox.app.games.tictactoe.winLine
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -22,6 +23,13 @@ class TicTacToeTest {
     @Test fun bestMoveBlocks() {
         // X (1) threatens index 2; O must block.
         assertEquals(2, bestMove(listOf(1, 1, 0, 0, 2, 0, 0, 0, 0)))
+    }
+
+    @Test fun theComputerOnlyStartsOnItsTurnToStart() {
+        assertEquals(1, firstTurn(vsComputer = true, cpuFirst = false))
+        assertEquals(2, firstTurn(vsComputer = true, cpuFirst = true))
+        // X always starts a two-player game.
+        assertEquals(1, firstTurn(vsComputer = false, cpuFirst = true))
     }
 
     @Test fun computerOnlyPlaysFreeSquares() {

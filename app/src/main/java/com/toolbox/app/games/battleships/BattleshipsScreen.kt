@@ -19,15 +19,10 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Sailing
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -56,19 +51,20 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
-import com.toolbox.app.ui.common.Tally
+import com.toolbox.app.ui.common.GameGuardDialog
+import com.toolbox.app.ui.common.GameModeChips
+import com.toolbox.app.ui.common.GameOver
+import com.toolbox.app.ui.common.GameOverCard
+import com.toolbox.app.ui.common.NewGameButton
+import com.toolbox.app.ui.common.ScoresMenu
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.rememberGameGuard
+import com.toolbox.app.ui.common.rememberGameMode
 import com.toolbox.app.ui.common.rememberHaptics
-import com.toolbox.app.ui.common.rememberPref
 import com.toolbox.app.ui.common.rememberTally
 import com.toolbox.app.ui.common.rememberToneSynth
 import com.toolbox.app.ui.theme.GoogleColors
 import kotlinx.coroutines.delay
-
-private enum class Mode(val label: String, val vsComputer: Boolean) {
-    // "Easy" is kept as the name because saved settings and win counts use it.
-    Easy("Solo", true), TwoPlayer("2 players", false)
-}
 
 /**
  * Place: [player] arranges their fleet. Handoff: the screen is hidden until the next player is holding the phone.
@@ -90,10 +86,9 @@ private fun resultText(r: ShotResult?, ship: String?) = when (r) {
 fun BattleshipsScreen(onBack: () -> Unit) {
     val haptics = rememberHaptics()
     val synth = rememberToneSynth()
-    var modeName by rememberPref("battleships_mode", Mode.Easy.name)
-    val mode = Mode.entries.firstOrNull { it.name == modeName } ?: Mode.Easy
-    val (tally, setTally) = rememberTally("battleships_tally_${mode.name}")
-    var menu by remember { mutableStateOf(false) }
+    val guard = rememberGameGuard()
+    var mode by rememberGameMode("battleships_mode")
+    val tally = rememberTally("battleships_tally_${mode.key}")
 
     // Everything is kept as text so a rotation (or the app being reclaimed) doesn't lose the game.
     var phaseName by rememberSaveable { mutableStateOf(Phase.Place.name) }
@@ -110,18 +105,24 @@ fun BattleshipsScreen(onBack: () -> Unit) {
     var incomingShot by rememberSaveable { mutableIntStateOf(-1) }
     var incomingResult by rememberSaveable { mutableStateOf<String?>(null) }
 
+    // A short note shown in place of the shot results, such as after tapping a square already fired at.
+    var notice by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(notice) { if (notice != null) { delay(1800); notice = null } }
+
     val boards = listOf(Board.decode(board0), Board.decode(board1))
     fun setBoard(p: Int, b: Board) { if (p == 0) board0 = b.encode() else board1 = b.encode() }
     val draftBoard = Board.decode(draft) ?: Board(Fleet.random())
     val vsCpu = mode.vsComputer
     fun name(p: Int) = if (vsCpu) (if (p == 0) "You" else "The computer") else "Player ${p + 1}"
+    // Once the first fleet is ready, a new game would throw away the placing (and any shots).
+    val underWay = board0.isNotEmpty() && phase != Phase.Over
 
     fun newGame() {
         phaseName = Phase.Place.name
         player = 0
         draft = Board(Fleet.random()).encode()
         board0 = ""; board1 = ""
-        selected = -1; lastShot = -1; lastResult = null; incomingShot = -1; incomingResult = null
+        selected = -1; lastShot = -1; lastResult = null; incomingShot = -1; incomingResult = null; notice = null
     }
 
     fun handoffTo(next: Phase, p: Int) {
@@ -134,7 +135,8 @@ fun BattleshipsScreen(onBack: () -> Unit) {
         setBoard(player, draftBoard)
         selected = -1
         when {
-            vsCpu -> { setBoard(1, Board(Fleet.random())); player = 0; phaseName = Phase.Aim.name }
+            // The computer's ships may touch, as yours can, so sinking one doesn't give away the squares around it.
+            vsCpu -> { setBoard(1, Board(Fleet.random(spaced = false))); player = 0; phaseName = Phase.Aim.name }
             player == 0 -> { draft = Board(Fleet.random()).encode(); handoffTo(Phase.Place, 1) }
             else -> handoffTo(Phase.Aim, 0)
         }
@@ -152,7 +154,13 @@ fun BattleshipsScreen(onBack: () -> Unit) {
     fun fire(cell: Int) {
         if (phase != Phase.Aim) return
         val target = boards[1 - player] ?: return
+        if (target.isShot(cell)) {
+            notice = "Already fired there. Pick another square"
+            haptics.heavy()
+            return
+        }
         val (next, r) = target.fire(cell) ?: return
+        notice = null
         setBoard(1 - player, next)
         lastShot = cell
         lastResult = resultText(r, next.shipAt(cell).takeIf { it >= 0 }?.let { Fleet.NAMES[it] })
@@ -162,7 +170,7 @@ fun BattleshipsScreen(onBack: () -> Unit) {
         when {
             next.allSunk -> {
                 phaseName = Phase.Over.name
-                setTally(tally.record(if (vsCpu) 1 else player + 1))
+                tally.record(if (vsCpu) 1 else player + 1)
             }
             vsCpu -> phaseName = Phase.CpuTurn.name
             else -> phaseName = Phase.Result.name
@@ -178,11 +186,11 @@ fun BattleshipsScreen(onBack: () -> Unit) {
         setBoard(0, next)
         incomingShot = cell
         incomingResult = resultText(r, next.shipAt(cell).takeIf { it >= 0 }?.let { "your ${Fleet.NAMES[it]}" })
-        if (r != ShotResult.Miss) haptics.click()
+        feedback(r)
         if (next.allSunk) {
             player = 1
             phaseName = Phase.Over.name
-            setTally(tally.record(2))
+            tally.record(2)
         } else {
             phaseName = Phase.Aim.name
         }
@@ -192,13 +200,8 @@ fun BattleshipsScreen(onBack: () -> Unit) {
         title = "Battleships",
         onBack = onBack,
         actions = {
-            Box {
-                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More") }
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text("New game") }, onClick = { newGame(); menu = false })
-                    DropdownMenuItem(text = { Text("Reset scores") }, onClick = { setTally(Tally()); menu = false })
-                }
-            }
+            NewGameButton(onClick = { guard.run(underWay) { newGame() } }, enabled = board0.isNotEmpty())
+            ScoresMenu(onReset = tally::reset)
         },
     ) { padding ->
         Column(
@@ -208,13 +211,10 @@ fun BattleshipsScreen(onBack: () -> Unit) {
             val column = Modifier.widthIn(max = 460.dp).fillMaxWidth()
             val choosingMode = phase == Phase.Over || (phase == Phase.Place && player == 0)
             if (choosingMode) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for (m in Mode.entries) {
-                        FilterChip(selected = mode == m, onClick = { if (mode != m) { modeName = m.name; newGame() } }, label = { Text(m.label) })
-                    }
-                }
+                GameModeChips(mode, onSelect = { m -> guard.run(underWay) { mode = m; newGame() } })
+                val t = tally.value
                 Text(
-                    if (vsCpu) "Games: You ${tally.a} · Computer ${tally.b}" else "Games: Player 1 ${tally.a} · Player 2 ${tally.b}",
+                    if (vsCpu) t.summary("Games", "You", "Computer", withDraws = false) else t.summary("Games", "Player 1", "Player 2", withDraws = false),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -288,12 +288,27 @@ fun BattleshipsScreen(onBack: () -> Unit) {
                     val shooter = if (phase == Phase.Over && vsCpu) 0 else player
                     val enemy = boards[1 - shooter] ?: return@Column
                     val own = boards[shooter] ?: return@Column
-                    val header = when (phase) {
-                        Phase.Over -> if (vsCpu) (if (player == 0) "You win!" else "The computer wins") else "${name(player)} wins!"
-                        Phase.CpuTurn -> "Computer's turn…"
-                        else -> if (vsCpu) "Your turn: fire!" else "${name(player)}: fire!"
+                    if (phase == Phase.Over) {
+                        // The winner's shots are the ones at the loser's fleet.
+                        val shots = boards[1 - player]?.shots?.size ?: 0
+                        GameOverCard(
+                            GameOver(
+                                if (vsCpu) (if (player == 0) "You win!" else "The computer wins") else "${name(player)} wins!",
+                                when {
+                                    !vsCpu -> "Sank the whole fleet in $shots shots"
+                                    player == 0 -> "You sank the whole fleet in $shots shots"
+                                    else -> "It sank your fleet in $shots shots"
+                                },
+                            ),
+                            onAction = ::newGame,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    } else {
+                        Text(
+                            if (phase == Phase.CpuTurn) "Computer's turn…" else if (vsCpu) "Your turn: fire!" else "${name(player)}: fire!",
+                            style = MaterialTheme.typography.titleLarge,
+                        )
                     }
-                    Text(header, style = MaterialTheme.typography.titleLarge)
                     FleetStatus(enemy, column)
                     Spacer(Modifier.height(8.dp))
                     Grid(
@@ -305,7 +320,7 @@ fun BattleshipsScreen(onBack: () -> Unit) {
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        listOfNotNull(
+                        notice ?: listOfNotNull(
                             lastResult?.takeIf { it.isNotEmpty() }?.let { if (vsCpu) "You: $it" else it },
                             incomingResult?.takeIf { it.isNotEmpty() }?.let { if (vsCpu) "Computer: $it" else "${name(1 - player)}: $it" },
                         ).joinToString("   ·   ").ifEmpty { if (phase == Phase.Aim) "Tap a square to fire" else " " },
@@ -315,7 +330,6 @@ fun BattleshipsScreen(onBack: () -> Unit) {
                     Spacer(Modifier.height(8.dp))
                     when (phase) {
                         Phase.Result -> Button(onClick = { handoffTo(Phase.Aim, 1 - player) }) { Text("Pass to ${name(1 - player)}") }
-                        Phase.Over -> Button(onClick = ::newGame) { Text("Play again") }
                         else -> Unit
                     }
                     Spacer(Modifier.height(12.dp))
@@ -330,6 +344,7 @@ fun BattleshipsScreen(onBack: () -> Unit) {
             }
         }
     }
+    GameGuardDialog(guard)
 }
 
 /** The enemy ships, struck through once sunk. */

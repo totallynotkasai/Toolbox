@@ -30,7 +30,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AcUnit
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -65,10 +64,8 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.utf16CodePoint
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -81,16 +78,21 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import com.toolbox.app.R
+import com.toolbox.app.ui.common.GameGuardDialog
+import com.toolbox.app.ui.common.GameMode
+import com.toolbox.app.ui.common.GameModeChips
+import com.toolbox.app.ui.common.GameOver
+import com.toolbox.app.ui.common.GameOverCard
+import com.toolbox.app.ui.common.NewGameButton
+import com.toolbox.app.ui.common.ScoresMenu
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.rememberGameGuard
+import com.toolbox.app.ui.common.rememberTally
 import com.toolbox.app.ui.common.rememberBestScore
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.common.rememberPref
@@ -111,66 +113,93 @@ private val SUN = Color(0xFFFFD54F)
 
 @Composable
 fun HangmanScreen(onBack: () -> Unit) {
-    val context = LocalContext.current
+    val resources = LocalResources.current
     val haptics = rememberHaptics()
-    val words = remember {
-        HangmanState.parseWords(context.resources.openRawResource(R.raw.words).bufferedReader().use { it.readText() })
+    val guard = rememberGameGuard()
+    val words = remember(resources) {
+        HangmanState.parseWords(resources.openRawResource(R.raw.words).bufferedReader().use { it.readText() })
     }
     var twoPlayer by rememberPref("hangman_two_player", false)
-    var soloWord by rememberSaveable { mutableStateOf(HangmanState.pick(words)) }
+    val mode = if (twoPlayer) GameMode.TwoPlayer else GameMode.Solo
+    // The solo word and its guesses are saved, so leaving and coming back brings the same word back. Otherwise a
+    // hard word could be swapped for a fresh one, streak intact, just by leaving the screen.
+    var savedWord by rememberPref("hangman_word", "")
+    var soloGuessed by rememberPref("hangman_guessed", "")
+    val firstWord = remember { HangmanState.pick(words) }
+    val soloWord = savedWord.takeIf(HangmanState::isWord) ?: firstWord
+    LaunchedEffect(soloWord) { if (savedWord != soloWord) { savedWord = soloWord; soloGuessed = "" } }
     // Two players: null while the setter is choosing a word.
     var duoWord by rememberSaveable { mutableStateOf<String?>(null) }
-    var guessed by rememberSaveable { mutableStateOf("") }
-    val word = if (twoPlayer) duoWord else soloWord
-    val state = word?.let { HangmanState(it, guessed.toSet()) }
+    var duoGuessed by rememberSaveable { mutableStateOf("") }
     var streak by rememberPref("hangman_streak", 0)
     val (best, submitBest) = rememberBestScore("hangman-streak")
-    var guesserWins by rememberSaveable { mutableIntStateOf(0) }
-    var setterWins by rememberSaveable { mutableIntStateOf(0) }
+    // Rounds won by whoever was guessing (side a) and whoever set the word (side b).
+    val duoTally = rememberTally("hangman_tally_TwoPlayer")
+
+    /** The round as it stands now, read from the saved state rather than the last composition. */
+    fun current(): HangmanState? = if (twoPlayer) duoWord?.let { HangmanState(it, duoGuessed.toSet()) } else HangmanState(soloWord, soloGuessed.toSet())
+    val state = current()
 
     fun guess(c: Char) {
-        if (state == null) return
-        val next = state.guess(c)
-        if (next === state) return
-        guessed = next.guessed.joinToString("")
+        val now = current() ?: return
+        val next = now.guess(c)
+        if (next === now) return
+        val letters = next.guessed.joinToString("")
+        if (twoPlayer) duoGuessed = letters else soloGuessed = letters
         when {
-            next.won -> { haptics.heavy(); if (twoPlayer) guesserWins++ else { streak += 1; submitBest(streak) } }
-            next.lost -> { haptics.heavy(); if (twoPlayer) setterWins++ else streak = 0 }
+            next.won -> { haptics.heavy(); if (twoPlayer) duoTally.record(1) else { streak += 1; submitBest(streak) } }
+            next.lost -> { haptics.heavy(); if (twoPlayer) duoTally.record(2) else streak = 0 }
             c.lowercaseChar() in next.word -> haptics.tick()
             else -> haptics.click()
         }
     }
 
+    val started = state != null && !state.over && state.guessed.isNotEmpty()
+
     /** Skipping a solo word you've started counts as a loss, or the streak could be farmed by skipping hard words. */
     fun abandonSolo() {
-        if (!twoPlayer && state != null && !state.over && state.guessed.isNotEmpty()) streak = 0
+        if (!twoPlayer && started) streak = 0
+    }
+
+    fun newSoloWord() {
+        savedWord = HangmanState.pick(words, previous = soloWord)
+        soloGuessed = ""
     }
 
     fun newWord() {
         abandonSolo()
-        if (twoPlayer) duoWord = null else soloWord = HangmanState.pick(words, previous = soloWord)
-        guessed = ""
+        if (twoPlayer) { duoWord = null; duoGuessed = "" } else newSoloWord()
     }
 
-    fun setMode(two: Boolean) {
-        if (two == twoPlayer) return
-        abandonSolo()
-        twoPlayer = two
+    /** The solo word is saved, so it waits for you while you play two-player rounds. */
+    fun setMode(m: GameMode) {
+        twoPlayer = m == GameMode.TwoPlayer
         duoWord = null
-        if (!two) soloWord = HangmanState.pick(words, previous = soloWord)
-        guessed = ""
+        duoGuessed = ""
+    }
+
+    /** Asks first when leaving the round would cost something: a streak, or a two-player word in progress. */
+    fun guarded(action: () -> Unit) = when {
+        twoPlayer -> guard.run(started, title = "Start a new word?", text = "The word in progress will be lost.", confirm = "New word", action = action)
+        else -> guard.run(
+            started && streak > 0,
+            title = "Skip this word?",
+            text = "Skipping counts as a miss, so your streak of $streak will end.",
+            confirm = "Skip",
+            action = action,
+        )
     }
 
     val focus = remember { FocusRequester() }
+    val word = state?.word
     LaunchedEffect(word) { if (word != null) focus.requestFocus() }
 
     ToolScaffold(
         title = "Snowman",
         onBack = onBack,
         actions = {
-            if (state != null) {
-                IconButton(onClick = ::newWord) { Icon(Icons.Filled.Refresh, contentDescription = "New word") }
-            }
+            if (state != null) NewGameButton(onClick = { guarded(::newWord) }, description = "New word")
+            if (twoPlayer) ScoresMenu(onReset = duoTally::reset)
         },
     ) { padding ->
         Column(
@@ -193,22 +222,14 @@ fun HangmanScreen(onBack: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Column(Modifier.widthIn(max = 480.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    listOf("Solo", "Two players").forEachIndexed { i, label ->
-                        SegmentedButton(
-                            selected = twoPlayer == (i == 1),
-                            onClick = { setMode(i == 1) },
-                            shape = SegmentedButtonDefaults.itemShape(i, 2),
-                        ) { Text(label, maxLines = 1) }
-                    }
-                }
+                GameModeChips(mode, onSelect = { m -> if (twoPlayer) guarded { setMode(m) } else setMode(m) })
                 Spacer(Modifier.height(12.dp))
                 if (state == null) {
-                    WordEntry(onStart = { duoWord = it; guessed = ""; haptics.click() })
+                    WordEntry(onStart = { duoWord = it; duoGuessed = ""; haptics.click() })
                     return@Column
                 }
                 Text(
-                    if (twoPlayer) "Guesser $guesserWins  ·  Setter $setterWins"
+                    if (twoPlayer) duoTally.value.let { "Guesser ${it.a}  ·  Setter ${it.b}" }
                     else "Streak $streak" + if (best > 0) "  ·  Best $best" else "",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -224,41 +245,36 @@ fun HangmanScreen(onBack: () -> Unit) {
                 Spacer(Modifier.height(16.dp))
                 WordRow(state)
                 Spacer(Modifier.height(12.dp))
-                Text(
-                    when {
-                        state.won -> if (twoPlayer) "The guesser saved the snowman!" else "You saved the snowman!"
-                        state.lost -> "Melted! The word was ${state.word.uppercase()}"
-                        state.guessed.isEmpty() -> "Guess a letter before the sun gets too high"
-                        else -> " "
-                    },
-                    style = MaterialTheme.typography.titleMedium,
-                    color = when {
-                        state.won -> MaterialTheme.colorScheme.tertiary
-                        state.lost -> MaterialTheme.colorScheme.error
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                )
-                Spacer(Modifier.height(12.dp))
                 if (state.over) {
-                    Button(onClick = ::newWord, modifier = Modifier.height(52.dp)) {
-                        Text(if (twoPlayer) "Next word" else "New word")
-                    }
-                    if (twoPlayer) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "Swap roles and pass the phone",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    val swap = "Swap roles and pass the phone"
+                    GameOverCard(
+                        when {
+                            state.won -> GameOver(
+                                if (twoPlayer) "The guesser saved the snowman!" else "You saved the snowman!",
+                                if (twoPlayer) swap else null,
+                            )
+                            else -> GameOver(
+                                "Melted!",
+                                "The word was ${state.word.uppercase()}" + if (twoPlayer) ". $swap" else "",
+                            )
+                        },
+                        onAction = ::newWord,
+                        action = if (twoPlayer) "Next word" else "New word",
+                    )
                 } else {
+                    Text(
+                        if (state.guessed.isEmpty()) "Guess a letter before the sun gets too high" else " ",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(12.dp))
                     Keyboard(state, onKey = ::guess)
                 }
             }
         }
     }
+    GameGuardDialog(guard)
 }
 
 /** Two-player setup: the setter types a secret word (hidden by default) while the guesser looks away. */
