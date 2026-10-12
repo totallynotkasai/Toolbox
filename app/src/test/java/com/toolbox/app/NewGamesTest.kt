@@ -144,6 +144,33 @@ class AirHockeyTest {
         }
         error("the computer never scored in a minute: ${g.scores.toList()}")
     }
+
+    @Test fun computerClearsADeadPuckAnywhereInItsHalf() {
+        for (xi in 0..8) for (yi in 0..7) {
+            val x = 0.046f + xi * (0.908f / 8); val y = 0.046f + yi * (0.78f / 7)
+            val g = AirHockey(height = 1.7f, seed = 1)
+            g.reset(serveTo = 1)
+            g.malletSpeed[1] = 1.3f; g.aiReaction = 0.18f
+            g.placePuck(x, y)
+            val cleared = (0 until 60 * 10).any {
+                g.aiTarget().let { t -> g.setTarget(1, t.x, t.y) }
+                g.setTarget(0, 0.5f, 1.6f)
+                g.step(1 / 60f)
+                g.puckY > g.height / 2 + AirHockey.PUCK_R || g.scores.sum() > 0
+            }
+            assertTrue("puck left at $x, $y stayed in the computer's half", cleared)
+        }
+    }
+
+    @Test fun aPuckDeadOnTheBoardsIsServedAgain() {
+        val g = AirHockey(height = 1.7f, seed = 1)
+        g.reset()
+        g.setTarget(0, 0.1f, 1.2f)
+        g.placePuck(0.955f, 1.655f) // the bottom player's corner
+        repeat(60 * 4) { g.step(1 / 60f) }
+        assertEquals(1.7f * 0.68f, g.puckY, 1e-4f)
+        assertTrue(g.puckX in 0.4f..0.6f)
+    }
 }
 
 class BattleshipsTest {

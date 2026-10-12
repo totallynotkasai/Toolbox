@@ -63,6 +63,26 @@ class ConnectFourTest {
         assertEquals(3, bestMove(b, 2))
     }
 
+    @Test fun wouldWinChecksEitherSideWithoutChangingTheBoard() {
+        // Yellow to move; red threatens column 3 on the bottom row.
+        val b = ConnectFour.fromMoves(listOf(0, 6, 1, 6, 2))
+        val before = b.encode()
+        assertTrue(b.wouldWin(1, 3))
+        assertFalse(b.wouldWin(2, 3))
+        assertEquals(before, b.encode())
+    }
+
+    @Test fun computerAlwaysTakesAWin() {
+        val b = ConnectFour.fromMoves(listOf(2, 5, 2, 5, 2, 6))
+        repeat(200) { assertEquals(2, aiMove(b, Random(it))) }
+    }
+
+    @Test fun computerUsuallyButNotAlwaysBlocks() {
+        val b = ConnectFour.fromMoves(listOf(0, 6, 1, 6, 2))
+        val blocks = (0 until 1000).count { aiMove(b, Random(it)) == 3 }
+        assertTrue("blocked $blocks of 1000", blocks in 800..950)
+    }
+
     @Test fun fullBoardIsADraw() {
         // Pairs of columns filled alternately give RRRYYY / YYYRRR stacks; the last column alternates.
         // No four ever line up, so the board fills with no winner.

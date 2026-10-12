@@ -93,13 +93,14 @@ data class Board(val ships: List<Ship>, val shots: List<Int> = emptyList()) {
 
 /**
  * The computer's next shot at [board], using only what a player could know: it fires at random until it hits,
- * then tries the cells next to any hit on a ship that hasn't sunk yet.
+ * then tries the cells next to any hit on a ship that hasn't sunk yet. A quarter of the time it loses track and
+ * fires at random anyway, which leaves a careful player ahead more often than not.
  */
 fun aiShot(board: Board, random: Random = Random): Int {
     val sunkCells = board.ships.indices.filter { board.isSunk(it) }.flatMap { board.ships[it].cells }.toSet()
     val openHits = board.shots.filter { board.isHit(it) && it !in sunkCells }
     val near = openHits.flatMap { neighbours(it) }.filter { !board.isShot(it) }.distinct()
-    return if (near.isNotEmpty()) near.random(random) else (0 until GRID * GRID).filter { !board.isShot(it) }.random(random)
+    return if (near.isNotEmpty() && random.nextFloat() >= 0.25f) near.random(random) else (0 until GRID * GRID).filter { !board.isShot(it) }.random(random)
 }
 
 private fun neighbours(cell: Int): List<Int> {

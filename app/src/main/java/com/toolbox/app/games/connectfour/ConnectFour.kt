@@ -1,5 +1,6 @@
 package com.toolbox.app.games.connectfour
 
+import kotlin.math.abs
 import kotlin.random.Random
 
 const val COLS = 7
@@ -62,11 +63,15 @@ class ConnectFour private constructor(private val cells: IntArray, private val h
     }
 
     /** Whether the player to move would win by playing [col]. */
-    fun isWinningMove(col: Int): Boolean {
+    fun isWinningMove(col: Int): Boolean = wouldWin(toMove, col)
+
+    /** Whether [player] would win by dropping a disc in [col], whoever's turn it is. */
+    fun wouldWin(player: Int, col: Int): Boolean {
         if (!canPlay(col)) return false
-        val row = play(col)
-        val wins = lineThrough(col, row) != null
-        undo(col)
+        val i = heights[col] * COLS + col
+        cells[i] = player
+        val wins = lineThrough(col, heights[col]) != null
+        cells[i] = 0
         return wins
     }
 
@@ -156,10 +161,22 @@ fun bestMove(board: ConnectFour, depth: Int): Int {
     return bestCol
 }
 
-/** The computer's move: a random column 30% of the time, and otherwise the best move looking 2 plies ahead. */
+/**
+ * The computer's move, pitched at a casual player rather than played to win: it always takes a win and usually
+ * blocks yours, but otherwise leans towards the centre without planning ahead, often missing that a disc gives
+ * you a win on top of it. Only now and then does it search properly. Even a 2-ply search with the window
+ * heuristic beat sensible casual play about three games in four, which felt unwinnable.
+ */
 fun aiMove(board: ConnectFour, random: Random = Random): Int {
-    if (random.nextFloat() < 0.3f) {
-        return (0 until COLS).filter { board.canPlay(it) }.random(random)
-    }
-    return bestMove(board, 2)
+    val legal = (0 until COLS).filter { board.canPlay(it) }
+    legal.firstOrNull { board.isWinningMove(it) }?.let { return it }
+    val threats = legal.filter { board.wouldWin(3 - board.toMove, it) }
+    if (threats.isNotEmpty() && random.nextFloat() < 0.85f) return threats.first()
+    if (random.nextFloat() < 0.1f) return bestMove(board, 1)
+    val safe = legal.filter { c -> board.copy().also { it.play(c) }.let { !it.isWinningMove(c) } }
+    val pool = if (safe.isNotEmpty() && random.nextFloat() < 0.4f) safe else legal
+    // Centre columns are likelier, as they are for most people.
+    var pick = random.nextInt(pool.sumOf { 4 - abs(it - 3) })
+    for (c in pool) { pick -= 4 - abs(c - 3); if (pick < 0) return c }
+    return pool.last()
 }

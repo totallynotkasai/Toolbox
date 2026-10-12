@@ -57,9 +57,10 @@ import com.toolbox.app.ui.common.rememberTally
 import com.toolbox.app.ui.common.rememberToneSynth
 import com.toolbox.app.ui.theme.GoogleColors
 
-private enum class Mode(val label: String, val cpuSpeed: Float?) {
-    // "Easy" is kept as the name because saved settings and win counts use it.
-    Easy("Solo", 1.5f), TwoPlayer("2 players", null)
+private enum class Mode(val label: String, val cpuSpeed: Float?, val cpuReaction: Float = 0f) {
+    // "Easy" is kept as the name because saved settings and win counts use it. Without the reaction time the
+    // computer read every shot perfectly and was close to unbeatable, however slow its mallet.
+    Easy("Solo", 1.3f, cpuReaction = 0.18f), TwoPlayer("2 players", null)
 }
 
 private val BOTTOM = GoogleColors.Blue
@@ -95,6 +96,7 @@ fun AirHockeyScreen(onBack: () -> Unit) {
             var finished by remember(game) { mutableStateOf(false) }
             val cpu = mode.cpuSpeed != null
             game.malletSpeed[1] = mode.cpuSpeed ?: AirHockey.MALLET_MAX_SPEED
+            game.aiReaction = mode.cpuReaction
 
             fun start() {
                 game.reset()
