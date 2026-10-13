@@ -131,7 +131,7 @@ h2 { font-size: clamp(28px, 4vw, 38px); letter-spacing: -.01em; margin: 0 0 8px;
 .sub { color: var(--text-2); margin: 0 0 32px; font-size: 17px; max-width: 42em; }
 
 /* Screenshots */
-.shots { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+.shots { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; }
 .shots figure { margin: 0; }
 .shots img { width: 100%; height: auto; display: block; border-radius: 18px; border: 1px solid var(--outline); background: var(--surface); }
 .shots figcaption { color: var(--text-2); font-size: 14px; text-align: center; margin-top: 8px; }
@@ -200,7 +200,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space
         <a class="btn primary" href="https://github.com/totallynotkasai/Toolbox/releases/latest"><span class="ms">download</span>Download APK</a>
         <a class="btn tonal" href="https://github.com/totallynotkasai/Toolbox"><span class="ms">code</span>View source</a>
       </div>
-      <p class="fine">Free and offline. No ads, no accounts, no tracking. <a href="https://github.com/totallynotkasai/Toolbox/blob/main/CHANGELOG.md">What’s new in 1.1.0</a></p>
+      <p class="fine">Free and offline. No ads, no accounts, no tracking. <a href="https://github.com/totallynotkasai/Toolbox/blob/main/CHANGELOG.md">What’s new in 1.2.0</a></p>
     </div>
 
     <div class="phone" aria-hidden="true">
@@ -243,8 +243,9 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space
     <p class="sub">Material You throughout, with real physics for the coin and dice.</p>
     <div class="shots">
       <figure><img src="screenshots/home.png" width="540" height="1200" loading="lazy" alt="The home screen: search, category chips and a two-column tool grid"><figcaption>Home</figcaption></figure>
-      <figure><img src="screenshots/coin.png" width="540" height="1200" loading="lazy" alt="Coin in Throw mode, showing heads, the counts and the recent results"><figcaption>Coin</figcaption></figure>
-      <figure><img src="screenshots/dice.png" width="540" height="1200" loading="lazy" alt="Dice in Throw mode: three six-sided dice totalling 7"><figcaption>Dice</figcaption></figure>
+      <figure><img src="screenshots/coin.png" width="540" height="1200" loading="lazy" alt="Coin in Throw mode: tails, 7 heads and 7 tails, 2 tails in a row, and the last ten results in the history bar"><figcaption>Coin</figcaption></figure>
+      <figure><img src="screenshots/dice.png" width="540" height="1200" loading="lazy" alt="Dice in Throw mode: three six-sided dice totalling 14, with the last ten totals in the history bar"><figcaption>Dice</figcaption></figure>
+      <figure><img src="screenshots/calculator.png" width="540" height="1200" loading="lazy" alt="The Calculator with 150 in memory, recalled into 1200÷12+150, previewing 250"><figcaption>Calculator</figcaption></figure>
       <figure><img src="screenshots/connect-four.png" width="540" height="1200" loading="lazy" alt="Connect Four, won against the computer"><figcaption>Connect Four</figcaption></figure>
       <figure><img src="screenshots/bubble-wrap.png" width="540" height="1200" loading="lazy" alt="Bubble Wrap with a third of the sheet popped"><figcaption>Bubble Wrap</figcaption></figure>
     </div>
@@ -274,26 +275,26 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space
       <p>Shake your phone to decide: it works on all six.</p>
       <div class="tiles">
         <div class="tile" data-tool="coin"><span class="ic c-yellow" style="--i:url(icons/coin.svg)"></span><div><b>Coin</b><span>Quick flip, or Throw: a physics coin you swipe or flick. Keeps counts and streaks.</span></div></div>
-        <div class="tile" data-tool="dice"><span class="ic c-green" style="--i:url(icons/dice.svg)"></span><div><b>Dice</b><span>d4 to d20, up to six at once. Quick roll, or throw them across a walled table.</span></div></div>
+        <div class="tile" data-tool="dice"><span class="ic c-green" style="--i:url(icons/dice.svg)"></span><div><b>Dice</b><span>d4 to d20, up to six at once. Quick roll, or throw them across a walled table. Keeps your last 20 rolls.</span></div></div>
         <div class="tile" data-tool="eightball"><span class="ic c-red" style="--i:url(icons/eightball.svg)"></span><div><b>Magic 8-Ball</b><span>Ask a question and shake for one of the 20 classic answers.</span></div></div>
-        <div class="tile" data-tool="random"><span class="ic c-blue" style="--i:url(icons/random.svg)"></span><div><b>Random Number</b><span>Any whole number in a range, negatives included.</span></div></div>
-        <div class="tile" data-tool="spinner"><span class="ic c-green" style="--i:url(icons/spinner.svg)"></span><div><b>Spinner</b><span>A wheel of up to 20 of your own options. A flick always turns it at least twice, so it can’t be aimed.</span></div></div>
-        <div class="tile" data-tool="teams"><span class="ic c-yellow" style="--i:url(icons/teams.svg)"></span><div><b>Team Splitter</b><span>Split up to 60 names by team count or team size, then share the teams as text.</span></div></div>
+        <div class="tile" data-tool="random"><span class="ic c-blue" style="--i:url(icons/random.svg)"></span><div><b>Random Number</b><span>Any whole number in a range, negatives included, with your last 20 kept.</span></div></div>
+        <div class="tile" data-tool="spinner"><span class="ic c-green" style="--i:url(icons/spinner.svg)"></span><div><b>Spinner</b><span>A wheel of up to 20 of your own options. A flick always turns it at least twice, so it can’t be aimed. Keeps your last 20 results.</span></div></div>
+        <div class="tile" data-tool="teams"><span class="ic c-yellow" style="--i:url(icons/teams.svg)"></span><div><b>Team Splitter</b><span>Split up to 60 names by team count or team size, then share the teams as text. Your last split is kept.</span></div></div>
       </div>
     </div>
 
     <div class="cat" data-c="Measurements">
       <h3><span class="ms">straighten</span>Measurements</h3>
-      <p>Uses your phone’s sensors and microphone. Permissions are only asked for when you open a screen that needs them.</p>
+      <p>Uses your phone’s sensors and microphone. Permissions are only asked for when you open a screen that needs them, and approximate location only if you turn on true north.</p>
       <div class="tiles">
         <div class="tile" data-tool="level"><span class="ic c-green" style="--i:url(icons/level.svg)"></span><div><b>Bubble Level</b><span>Tilt on both axes to 0.1°, which edge is high, and “Set as level” for a phone that doesn’t sit flat.</span></div></div>
-        <div class="tile" data-tool="calculator"><span class="ic c-red" style="--i:url(icons/calculator.svg)"></span><div><b>Calculator</b><span>Brackets, phone-style percentages, a live preview and exact decimals. Turns with the phone.</span></div></div>
-        <div class="tile" data-tool="compass"><span class="ic c-red" style="--i:url(icons/compass.svg)"></span><div><b>Compass</b><span>Magnetic, with calibration and interference warnings and a marked bearing to follow.</span></div></div>
+        <div class="tile" data-tool="calculator"><span class="ic c-red" style="--i:url(icons/calculator.svg)"></span><div><b>Calculator</b><span>Brackets, phone-style percentages, a live preview and exact decimals. Memory keys, your last 50 sums, and it turns with the phone.</span></div></div>
+        <div class="tile" data-tool="compass"><span class="ic c-red" style="--i:url(icons/compass.svg)"></span><div><b>Compass</b><span>Magnetic or true north, with calibration and interference warnings and a marked bearing to follow.</span></div></div>
         <div class="tile" data-tool="soundmeter"><span class="ic c-yellow" style="--i:url(icons/soundmeter.svg)"></span><div><b>Sound Meter</b><span>Approximate dB with min, average, max and 30 s of history. Calibrate it to your phone’s mic.</span></div></div>
         <div class="tile" data-tool="steps"><span class="ic c-blue" style="--i:url(icons/steps.svg)"></span><div><b>Step Counter</b><span>Counts from midnight even with the app closed. Goal ring, distance, calories and a 7-day chart.</span></div></div>
         <div class="tile" data-tool="counter"><span class="ic c-blue" style="--i:url(icons/counter.svg)"></span><div><b>Tally Counter</b><span>Tap to count anything, with undo after a reset.</span></div></div>
         <div class="tile" data-tool="tuner"><span class="ic c-blue" style="--i:url(icons/tuner.svg)"></span><div><b>Tuner</b><span>Chromatic, guitar, bass, ukulele and violin, with a needle in cents.</span></div></div>
-        <div class="tile" data-tool="units"><span class="ic c-green" style="--i:url(icons/units.svg)"></span><div><b>Unit Converter</b><span>Ten categories, with UK and US pints, gallons, tons and mpg.</span></div></div>
+        <div class="tile" data-tool="units"><span class="ic c-green" style="--i:url(icons/units.svg)"></span><div><b>Unit Converter</b><span>Eleven categories, with UK and US pints, gallons, tons and mpg. Cooking turns cups into grams and gas marks into °C.</span></div></div>
       </div>
     </div>
 
@@ -302,8 +303,8 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space
       <p>Clocks and counters for the kitchen, the gym and the practice room.</p>
       <div class="tiles">
         <div class="tile" data-tool="dates"><span class="ic c-red" style="--i:url(icons/dates.svg)"></span><div><b>Date Calculator</b><span>Days and working days between dates, adding and subtracting, and age.</span></div></div>
-        <div class="tile" data-tool="metronome"><span class="ic c-red" style="--i:url(icons/metronome.svg)"></span><div><b>Metronome</b><span>30 to 250 BPM, tap tempo, time signatures and an accent on the first beat.</span></div></div>
-        <div class="tile" data-tool="stopwatch"><span class="ic c-red" style="--i:url(icons/stopwatch.svg)"></span><div><b>Stopwatch</b><span>Hundredths of a second, with laps and an optional keep-screen-on.</span></div></div>
+        <div class="tile" data-tool="metronome"><span class="ic c-red" style="--i:url(icons/metronome.svg)"></span><div><b>Metronome</b><span>30 to 250 BPM and tap tempo, 2/4 to 6/8 with accents, and 2, 3 or 4 clicks a beat. Remembers your settings.</span></div></div>
+        <div class="tile" data-tool="stopwatch"><span class="ic c-red" style="--i:url(icons/stopwatch.svg)"></span><div><b>Stopwatch</b><span>Hundredths of a second and laps. Keeps running with the app closed, with Pause and Lap in the notifications.</span></div></div>
         <div class="tile" data-tool="timer"><span class="ic c-yellow" style="--i:url(icons/timer.svg)"></span><div><b>Timer</b><span>A real alarm: it rings on time with the phone asleep, at alarm volume, until you stop it. Countdown in the notifications.</span></div></div>
       </div>
     </div>
@@ -366,11 +367,11 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space
     <p class="sub">Toolbox is built in Kotlin and Jetpack Compose, styled after Google’s own search tools.</p>
     <div class="features">
       <div class="feature"><span class="ms">palette</span><h3>Material You</h3><p>Picks up your wallpaper colours on Android 12 and later, with light and dark themes.</p></div>
-      <div class="feature"><span class="ms">shield</span><h3>Nothing leaves your phone</h3><p>No internet permission, no analytics, no ads and no sign-in. Scores and settings stay on the phone, and go only into your own Android backup if you use one. Step history is left out.</p></div>
+      <div class="feature"><span class="ms">shield</span><h3>Nothing leaves your phone</h3><p>No internet permission, no analytics, no ads and no sign-in. Scores and settings stay on the phone, and go only into your own Android backup if you use one. Step history and the stopwatch are left out. True north keeps only the declination, never your location.</p></div>
       <div class="feature"><span class="ms">inventory_2</span><h3>No third-party code</h3><p>Pitch detection, audio synthesis, dice and coin physics and every game AI are written from scratch.</p></div>
       <div class="feature"><span class="ms">vibration</span><h3>Shake to decide</h3><p>Shake your phone to flip, roll, spin, ask, pick a number or reshuffle teams. Harder shakes throw higher.</p></div>
       <div class="feature"><span class="ms">accessibility_new</span><h3>Works with TalkBack</h3><p>Every screen reads out properly and fits at large text sizes, and the turn-based games can be played with TalkBack.</p></div>
-      <div class="feature"><span class="ms">lock_open</span><h3>Permissions on demand</h3><p>Microphone and activity access are only asked for when you open a screen that needs them, and notifications when you first start a timer.</p></div>
+      <div class="feature"><span class="ms">lock_open</span><h3>Permissions on demand</h3><p>Microphone and activity access are only asked for when you open a screen that needs them, approximate location only for true north, and notifications when you first start a timer or the stopwatch.</p></div>
     </div>
   </div>
 </section>

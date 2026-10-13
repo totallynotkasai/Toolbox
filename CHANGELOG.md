@@ -1,10 +1,41 @@
 # Changelog
 
+## 1.2.0
+
+New features for eight tools. It also includes everything listed under 1.1.0, which wasn't released on its own.
+
+**Before installing:** 1.0.0 was signed with a development key, and 1.2.0 uses the project's release key. Android won't install one over the other, so uninstall 1.0.0 first. Its scores, favourites and settings are lost. Later versions update in place.
+
+### New
+
+- **The Stopwatch keeps running** after you leave the screen, close the app or restart the phone. While it runs, a notification shows the time ticking, with Pause and Lap buttons, and Resume and Reset once paused. The main button now says Start, Pause and Resume. Laps keep their numbers past 999.
+- **Calculator memory and history.** An MC / MR / M+ / M− row sits above the keys (under the display when the phone is sideways), and an "M" on the display shows memory holds a value. The History button lists your last 50 sums: tap one to carry on from its answer, or the pencil to edit the sum. Clear has Undo. Memory and history are kept when the app closes.
+- **Compass true north.** Turn on True north and the compass corrects for the difference between magnetic and true north where you are. It asks once for your approximate location, works offline, and keeps only the correction, never the location. If you'd rather not share it, type the correction in yourself.
+- **Cooking units** in the Unit Converter: teaspoons, tablespoons, cups (US, imperial and metric), pints, fluid ounces, grams and pounds, with cups to grams for 12 ingredients from flour to honey. Oven temperatures convert between °C, fan °C, °F and gas mark, using the UK recipe chart.
+- **Result history** on the Dice, Spinner and Random Number. A bar under the result shows the latest ones, and tapping it opens the last 20 with Clear and Undo. The Coin uses the same bar and list, and now keeps 20 results too. Clearing its list keeps the heads and tails counts.
+- **The Team Splitter remembers its last split.** It comes back when you reopen it, until you change the names or reshuffle.
+
+### Changed
+
+- **Metronome:** 6/8 time (six clicks a bar, strong on 1 and lighter on 4), and subdivisions of 2, 3 or 4 clicks per beat, quieter than the beat. Tempo, time signature, accent and subdivision are remembered. Beats stay exactly in time at every tempo.
+- **Unit Converter:** each picker groups its units under headings in Cooking, unit names no longer repeat their symbol, and the category row opens scrolled to the chosen category.
+
+### Permissions
+
+- **Approximate location**, only if you turn on True north on the Compass. The location is used once a day to work out the correction and isn't kept.
+- **Notifications** are now also asked for the first time the Stopwatch starts, so it can show its time and buttons outside the app. Without them it still keeps running.
+- **Starting after a reboot** now also brings back a running or paused stopwatch's notification.
+
+### Behind the scenes
+
+- About 430 unit tests.
+- The stopwatch isn't copied into Android backups, because its time only makes sense on the phone that started it. Calculator memory and history, result history and the other new settings are backed up like the rest.
+
 ## 1.1.0
 
-A big round of fixes and polish after a full review of the app.
+Not released on its own. Its changes are all in 1.2.0.
 
-**Before installing:** 1.0.0 was signed with a development key, and 1.1.0 uses the project's release key. Android won't install one over the other, so uninstall 1.0.0 first. Its scores, favourites and settings are lost. Later versions update in place.
+A big round of fixes and polish after a full review of the app.
 
 ### New
 
