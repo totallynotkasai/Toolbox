@@ -55,7 +55,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -81,12 +80,6 @@ import com.toolbox.app.ui.common.rememberShakeEnabled
 import com.toolbox.app.ui.theme.GoogleColors
 import kotlin.math.max
 
-/** Keeps the dealt teams across rotation; names can't contain these control characters. */
-private val TeamsSaver = Saver<List<List<String>>, String>(
-    save = { teams -> teams.joinToString("\u001E") { it.joinToString("\u001F") } },
-    restore = { s -> if (s.isEmpty()) emptyList() else s.split('\u001E').map { it.split('\u001F') } },
-)
-
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun TeamSplitterScreen(onBack: () -> Unit) {
@@ -103,7 +96,9 @@ fun TeamSplitterScreen(onBack: () -> Unit) {
     var nameError by remember { mutableStateOf<String?>(null) }
     val say = rememberAnnouncer()
     var confirmClear by remember { mutableStateOf(false) }
-    var teams by rememberSaveable(stateSaver = TeamsSaver) { mutableStateOf(emptyList<List<String>>()) }
+    // The last split comes back on reopening, until the names change or it's reshuffled.
+    var savedSplit by rememberPref("teams_split", "")
+    val teams = remember(savedSplit, names) { decodeSplit(savedSplit, names) }
     var deal by rememberSaveable { mutableIntStateOf(0) } // bumped on every split so the cards re-animate
 
     val n = names.size
@@ -114,7 +109,7 @@ fun TeamSplitterScreen(onBack: () -> Unit) {
 
     fun setNames(list: List<String>) {
         stored = list.joinToString("\n")
-        teams = emptyList() // Stale teams would still show removed people.
+        savedSplit = "" // Stale teams would still show removed people.
     }
 
     fun add() {
@@ -138,10 +133,11 @@ fun TeamSplitterScreen(onBack: () -> Unit) {
 
     fun split() {
         if (n < 2) return
-        teams = splitTeams(names, splitInto)
+        val dealt = splitTeams(names, splitInto)
+        savedSplit = encodeSplit(names, dealt)
         deal++
         haptics.heavy()
-        say("Split into ${teams.size} teams")
+        say("Split into ${dealt.size} teams")
     }
 
     OnShake(shake.value) { split() } // The detector's cooldown stops a shake re-dealing mid-animation.
@@ -172,7 +168,7 @@ fun TeamSplitterScreen(onBack: () -> Unit) {
             item("input") {
                 OutlinedTextField(
                     value = input,
-                    onValueChange = { input = it.replace('\u001E', ' ').replace('\u001F', ' '); nameError = null },
+                    onValueChange = { input = withoutSeparators(it); nameError = null },
                     label = { Text("Add a name") },
                     placeholder = { Text("Or paste a list: Sam, Alex, Jo…") },
                     singleLine = true,

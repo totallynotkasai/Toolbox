@@ -3,8 +3,8 @@ package com.toolbox.app.tools.spinner
 import android.content.Context
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.exponentialDecay
 import androidx.compose.animation.core.calculateTargetValue
+import androidx.compose.animation.core.exponentialDecay
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -34,6 +34,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -84,9 +86,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.edit
 import com.toolbox.app.ui.common.OnShake
+import com.toolbox.app.ui.common.ResultHistorySheet
+import com.toolbox.app.ui.common.ResultRow
+import com.toolbox.app.ui.common.ResultStrip
+import com.toolbox.app.ui.common.STRIP_MAX
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberHaptics
+import com.toolbox.app.ui.common.rememberResultLog
 import com.toolbox.app.ui.common.rememberShakeEnabled
 import com.toolbox.app.ui.common.rememberToneSynth
 import com.toolbox.app.ui.theme.GoogleColors
@@ -145,6 +152,9 @@ internal fun remaining(options: List<String>, removed: Set<Int>): List<String> =
 internal fun parseRemoved(text: String, size: Int): Set<Int> =
     text.split(',').mapNotNull { it.toIntOrNull() }.filter { it in 0 until size }.toSet()
 
+/** An option as the result strip shows it: up to 12 characters, then an ellipsis. */
+internal fun stripLabel(option: String): String = if (option.length <= 12) option else option.take(11).trimEnd() + "…"
+
 /** What TalkBack says for the wheel, which is only drawn: how many options it has and what they are. */
 internal fun wheelDescription(options: List<String>): String =
     "Wheel with ${options.size} options: ${options.joinToString(", ")}"
@@ -166,6 +176,8 @@ fun SpinnerScreen(onBack: () -> Unit) {
     var result by remember { mutableStateOf<Int?>(null) } // a position on [wheel]
     var editing by remember { mutableStateOf(false) }
     val measurer = rememberTextMeasurer()
+    val snackbar = remember { SnackbarHostState() }
+    val history = rememberResultLog("spinner_history", snackbar)
 
     val synth = rememberToneSynth()
 
@@ -200,7 +212,9 @@ fun SpinnerScreen(onBack: () -> Unit) {
             result = null
             try {
                 turn()
-                result = sliceUnderPointer(angle.value)
+                val landed = sliceUnderPointer(angle.value)
+                result = landed
+                history.add(listOf(wheel[landed]))
                 haptics.heavy()
             } finally {
                 if (run == mine) spinning = false
@@ -231,6 +245,7 @@ fun SpinnerScreen(onBack: () -> Unit) {
         actions = {
             IconButton(onClick = { editing = true }, enabled = !spinning) { Icon(Icons.Filled.Edit, contentDescription = "Edit options") }
         },
+        snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         ToolBody(padding) {
             val pointerColor = MaterialTheme.colorScheme.onSurface
@@ -313,6 +328,10 @@ fun SpinnerScreen(onBack: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(8.dp))
+            // Options can be up to 40 characters, so the strip shortens them; the full list has them whole.
+            val recent = history.entries.mapNotNull { it.singleOrNull() }.take(STRIP_MAX).reversed()
+            ResultStrip(recent.map(::stripLabel), onOpen = { history.open = true }, spoken = recent)
+            Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 FilledTonalButton(onClick = { editing = true }, enabled = !spinning) {
                     Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
@@ -321,6 +340,14 @@ fun SpinnerScreen(onBack: () -> Unit) {
                 Button(onClick = ::spin, enabled = !spinning) { Text("Spin") }
             }
         }
+    }
+
+    if (history.open) {
+        ResultHistorySheet(
+            rows = history.entries.mapNotNull { it.singleOrNull() }.map { ResultRow(it) },
+            onClear = history::clear,
+            onDismiss = { history.open = false },
+        )
     }
 
     if (editing) {

@@ -18,6 +18,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,9 +41,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.toolbox.app.ui.common.OnShake
+import com.toolbox.app.ui.common.ResultHistorySheet
+import com.toolbox.app.ui.common.ResultRow
+import com.toolbox.app.ui.common.ResultStrip
+import com.toolbox.app.ui.common.STRIP_MAX
 import com.toolbox.app.ui.common.ToolBody
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.rememberHaptics
+import com.toolbox.app.ui.common.rememberResultLog
 import com.toolbox.app.ui.common.rememberShakeEnabled
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -60,6 +67,8 @@ fun RandomNumberScreen(onBack: () -> Unit) {
     // Not saved: the shuffle that clears them doesn't survive a recreation.
     var busy by remember { mutableStateOf(false) }
     var shuffle by remember { mutableStateOf<Long?>(null) }
+    val snackbar = remember { SnackbarHostState() }
+    val history = rememberResultLog("random_history", snackbar)
 
     val min = minText.toLongOrNull()
     val max = maxText.toLongOrNull()
@@ -76,6 +85,7 @@ fun RandomNumberScreen(onBack: () -> Unit) {
             val v = Random.nextLong(lo, hi + 1)
             spoken = if (v == result && spoken == "$v") "$v again" else "$v"
             result = v
+            history.add(Draw(v, lo, hi).fields())
             busy = false
             haptics.heavy()
         }
@@ -87,6 +97,7 @@ fun RandomNumberScreen(onBack: () -> Unit) {
     ToolScaffold(
         title = "Random Number",
         onBack = onBack,
+        snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         ToolBody(padding) {
             val big = MaterialTheme.typography.displayLarge.fontSize * 1.6f
@@ -111,7 +122,10 @@ fun RandomNumberScreen(onBack: () -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            Spacer(Modifier.height(40.dp))
+            Spacer(Modifier.height(16.dp))
+            val recent = history.entries.mapNotNull(Draw::from).take(STRIP_MAX).reversed()
+            ResultStrip(recent.map { "${it.value}" }, onOpen = { history.open = true })
+            Spacer(Modifier.height(32.dp))
             Row(
                 Modifier.widthIn(max = 400.dp).fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -134,6 +148,14 @@ fun RandomNumberScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(24.dp))
             Button(onClick = ::generate, enabled = problem == null && !busy) { Text("Generate") }
         }
+    }
+
+    if (history.open) {
+        ResultHistorySheet(
+            rows = history.entries.mapNotNull(Draw::from).map { ResultRow(it.text, it.spoken) },
+            onClear = history::clear,
+            onDismiss = { history.open = false },
+        )
     }
 }
 

@@ -12,6 +12,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -36,6 +38,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.ui.common.OnShake
+import com.toolbox.app.ui.common.ResultHistorySheet
 import com.toolbox.app.ui.common.Rot
 import com.toolbox.app.ui.common.SteadyText
 import com.toolbox.app.ui.common.ToolScaffold
@@ -45,6 +48,7 @@ import com.toolbox.app.ui.common.TossModeToggle
 import com.toolbox.app.ui.common.TossTable
 import com.toolbox.app.ui.common.Vec3
 import com.toolbox.app.ui.common.drawTossShadow
+import com.toolbox.app.ui.common.offerUndo
 import com.toolbox.app.ui.common.rememberGameLoop
 import com.toolbox.app.ui.common.rememberShakeEnabled
 import com.toolbox.app.ui.common.rememberToneSynth
@@ -92,6 +96,8 @@ fun CoinScreen(onBack: () -> Unit) {
     val art = remember { CoinArt() }
     var stats by rememberCoinStats(COIN_STATS_KEY)
     var mode by rememberTossMode("coin_mode")
+    val snackbar = remember { SnackbarHostState() }
+    var showHistory by rememberSaveable { mutableStateOf(false) }
     // This visit's last result (true = heads) and how many times the coin turned over; null while it's moving.
     var result by rememberSaveable { mutableStateOf<Boolean?>(null) }
     var turns by rememberSaveable { mutableIntStateOf(0) }
@@ -211,6 +217,14 @@ fun CoinScreen(onBack: () -> Unit) {
         mode = m
     }
 
+    /** Clear in the full list: the results and the run go, the counts stay. Undo puts them back. */
+    fun clearHistory() {
+        val before = stats
+        stats = stats.clearHistory()
+        showHistory = false
+        scope.offerUndo(snackbar, "History cleared") { stats = stats.undoClear(before) }
+    }
+
     val shake = rememberShakeEnabled()
     OnShake(shake.value) { strength ->
         if (mode == TossMode.Quick) flip() // flip() ignores shakes mid-flip
@@ -221,10 +235,15 @@ fun CoinScreen(onBack: () -> Unit) {
         title = "Coin",
         onBack = onBack,
         actions = {
-            IconButton(onClick = { stats = CoinStats(); result = null }) {
+            IconButton(onClick = {
+                stats = CoinStats()
+                result = null
+                snackbar.currentSnackbarData?.dismiss() // an Undo for Clear would bring back a list the counts no longer match
+            }) {
                 Icon(Icons.Filled.RestartAlt, contentDescription = "Reset counts")
             }
         },
+        snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         TossLayout(
             padding = padding,
@@ -294,8 +313,12 @@ fun CoinScreen(onBack: () -> Unit) {
                 enabled = !busy,
             ) { Text(if (mode == TossMode.Quick) "Flip" else "Toss") }
             Spacer(Modifier.height(20.dp))
-            CoinStatsPanel(stats)
+            CoinStatsPanel(stats, onOpenHistory = { showHistory = true })
         }
+    }
+
+    if (showHistory) {
+        ResultHistorySheet(rows = coinHistoryRows(stats), onClear = ::clearHistory, onDismiss = { showHistory = false })
     }
 }
 

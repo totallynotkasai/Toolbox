@@ -17,6 +17,8 @@ import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,6 +41,10 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.toolbox.app.tools.coin.hintLines
 import com.toolbox.app.ui.common.OnShake
+import com.toolbox.app.ui.common.ResultHistorySheet
+import com.toolbox.app.ui.common.ResultRow
+import com.toolbox.app.ui.common.ResultStrip
+import com.toolbox.app.ui.common.STRIP_MAX
 import com.toolbox.app.ui.common.SteadyText
 import com.toolbox.app.ui.common.ToolScaffold
 import com.toolbox.app.ui.common.TossLayout
@@ -49,6 +55,7 @@ import com.toolbox.app.ui.common.Vec3
 import com.toolbox.app.ui.common.rememberAnnouncer
 import com.toolbox.app.ui.common.rememberGameLoop
 import com.toolbox.app.ui.common.rememberPref
+import com.toolbox.app.ui.common.rememberResultLog
 import com.toolbox.app.ui.common.rememberShakeEnabled
 import com.toolbox.app.ui.common.rememberToneSynth
 import com.toolbox.app.ui.common.rememberTossMode
@@ -95,6 +102,8 @@ fun DiceScreen(onBack: () -> Unit) {
     // The last roll, shared by both modes; null while the dice are moving, or after changing them. It's saved, and
     // the dice are laid out showing it again, so a recreated screen still matches what it says.
     var result by rememberSaveable { mutableStateOf<List<Int>?>(null) }
+    val snackbar = remember { SnackbarHostState() }
+    val history = rememberResultLog("dice_history", snackbar)
     val startCount = count.coerceIn(1, MAX_DICE)
     val startSides = sides.takeIf { it in DieShape.SIDES } ?: 6
 
@@ -108,8 +117,11 @@ fun DiceScreen(onBack: () -> Unit) {
     var frame by remember { mutableLongStateOf(0L) } // bumped every simulated frame, or change of dice, to redraw
     var rolling by remember { mutableStateOf(false) } // off the table: held or rolling
     var held by remember { mutableStateOf(false) }
+    var thrown by remember { mutableStateOf(false) } // this time off the table was a throw, not just picking them up
 
     val busy = tumbling || rolling
+
+    fun record(values: List<Int>) = history.add(DiceRoll(physics.shape.sides, values).fields())
 
     val loop = rememberGameLoop { dt ->
         if (physics.phase == DicePhysics.Phase.Resting) return@rememberGameLoop false
@@ -124,6 +136,10 @@ fun DiceScreen(onBack: () -> Unit) {
         frame++
         if (physics.phase != DicePhysics.Phase.Resting) return@rememberGameLoop true
         result = physics.values
+        // Putting the dice down shows their total, but only a throw is a roll worth keeping, as with the coin. Each
+        // throw is kept once, even if something wakes the table again before the next.
+        if (thrown) record(physics.values)
+        thrown = false
         rolling = false
         false
     }
@@ -138,6 +154,7 @@ fun DiceScreen(onBack: () -> Unit) {
             progress.snapTo(0f)
             progress.animateTo(1f, tween(QUICK_MS, easing = LinearEasing))
             result = values
+            record(values)
             synth.knock(0.6f)
             vibes.thud(0.6f)
             tumbling = false
@@ -148,6 +165,7 @@ fun DiceScreen(onBack: () -> Unit) {
         if (!physics.toss(power, dirX, dirZ)) return // still rolling
         result = null
         held = false
+        thrown = true
         vibes.click(0.45f)
         rolling = true
         loop.wake()
@@ -157,6 +175,7 @@ fun DiceScreen(onBack: () -> Unit) {
         if (!physics.grab()) return false
         result = null
         held = true
+        thrown = false
         vibes.tick(0.6f)
         rolling = true
         loop.wake()
@@ -204,6 +223,7 @@ fun DiceScreen(onBack: () -> Unit) {
     ToolScaffold(
         title = "Dice",
         onBack = onBack,
+        snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         val showing = when {
             busy -> null
@@ -277,6 +297,9 @@ fun DiceScreen(onBack: () -> Unit) {
                 lines = hintLines(LocalDensity.current.fontScale),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Spacer(Modifier.height(8.dp))
+            val rolls = history.entries.mapNotNull(DiceRoll::from)
+            ResultStrip(rolls.take(STRIP_MAX).reversed().map { it.short }, onOpen = { history.open = true })
             Spacer(Modifier.height(12.dp))
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 DieShape.SIDES.forEach { n ->
@@ -308,6 +331,14 @@ fun DiceScreen(onBack: () -> Unit) {
                 enabled = !busy,
             ) { Text(if (mode == TossMode.Quick) "Roll" else "Throw") }
         }
+    }
+
+    if (history.open) {
+        ResultHistorySheet(
+            rows = history.entries.mapNotNull(DiceRoll::from).map { ResultRow(it.text, it.spoken) },
+            onClear = history::clear,
+            onDismiss = { history.open = false },
+        )
     }
 }
 

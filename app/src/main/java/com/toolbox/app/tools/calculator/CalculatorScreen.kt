@@ -28,10 +28,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -62,10 +60,10 @@ import com.toolbox.app.tools.calculator.CalculatorEngine.MINUS
 import com.toolbox.app.tools.calculator.CalculatorEngine.PLUS
 import com.toolbox.app.tools.calculator.CalculatorEngine.TIMES
 import com.toolbox.app.ui.common.ToolScaffold
+import com.toolbox.app.ui.common.offerUndo
 import com.toolbox.app.ui.common.rememberAnnouncer
 import com.toolbox.app.ui.common.rememberHaptics
 import com.toolbox.app.ui.common.rememberPref
-import kotlinx.coroutines.launch
 import java.math.BigDecimal
 
 private enum class KeyKind { Digit, Operator, Function, Equals }
@@ -182,15 +180,11 @@ fun CalculatorScreen(onBack: () -> Unit) {
         val before = historyText
         historyText = ""
         showHistory = false
-        scope.launch {
-            snackbar.currentSnackbarData?.dismiss()
-            val choice = snackbar.showSnackbar("History cleared", actionLabel = "Undo", duration = SnackbarDuration.Long)
-            // Sums finished since the clear stay on top.
-            if (choice == SnackbarResult.ActionPerformed) {
-                historyText = CalculatorHistory.encode(
-                    (CalculatorHistory.decode(historyText) + CalculatorHistory.decode(before)).take(CalculatorHistory.CAP),
-                )
-            }
+        // Sums finished since the clear stay on top.
+        scope.offerUndo(snackbar, "History cleared") {
+            historyText = CalculatorHistory.encode(
+                (CalculatorHistory.decode(historyText) + CalculatorHistory.decode(before)).take(CalculatorHistory.CAP),
+            )
         }
     }
 
