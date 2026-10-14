@@ -4,6 +4,9 @@ import com.toolbox.app.toys.zip.ZIP_TEETH
 import com.toolbox.app.toys.zip.boltDelta
 import com.toolbox.app.toys.zip.pawlNotch
 import com.toolbox.app.toys.zip.teethPassed
+import com.toolbox.app.toys.zip.toothHead
+import com.toolbox.app.toys.zip.toothOffset
+import com.toolbox.app.toys.zip.toothTurn
 import com.toolbox.app.toys.zip.zipSpread
 import com.toolbox.app.toys.zip.zipTeeth
 import org.junit.Assert.assertEquals
@@ -30,6 +33,30 @@ class ZipTest {
         assertEquals(0f, zipSpread(-50f, 100f), 0.001f)
         assertTrue(zipSpread(40f, 100f) < zipSpread(200f, 100f))
         assertTrue(zipSpread(10_000f, 100f) <= 100f)
+    }
+
+    @Test fun shutTeethInterlockInAZigzag() {
+        // The sides take turns down the track, half a pitch apart.
+        assertTrue(toothOffset(-1) < toothOffset(1))
+        assertEquals(0.5f, toothOffset(1) - toothOffset(-1), 0f)
+        // Shut, each head crosses the centre line into the other side's row, and they lie straight across.
+        assertTrue(toothHead(-1, spread = 0f, reach = 6f) > 0f)
+        assertTrue(toothHead(1, spread = 0f, reach = 6f) < 0f)
+        assertEquals(0f, toothTurn(-1, 0f, 0f), 0f)
+        assertEquals(0f, toothTurn(1, 0f, 0f), 0f)
+    }
+
+    @Test fun openTeethTurnWithTheirTape() {
+        // Wide open, the heads are clear of the line, each on its own side.
+        assertTrue(toothHead(-1, spread = 40f, reach = 6f) < 0f)
+        assertTrue(toothHead(1, spread = 40f, reach = 6f) > 0f)
+        // In the V the tapes close in towards the slider below, so the teeth tip the opposite ways, like a fan.
+        val above = zipSpread(101f, 100f)
+        val below = zipSpread(99f, 100f)
+        val left = toothTurn(-1, above, below)
+        val right = toothTurn(1, above, below)
+        assertTrue(left < 0f && right > 0f)
+        assertEquals(-left, right, 0.0001f)
     }
 
     @Test fun clickingDirectionLeavesTheBoltAlone() {
