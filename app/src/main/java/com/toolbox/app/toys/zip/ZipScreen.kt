@@ -42,7 +42,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -76,10 +75,8 @@ import com.toolbox.app.ui.theme.GoogleColors
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.abs
-import kotlin.math.atan
 import kotlin.math.cos
 import kotlin.math.floor
-import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -92,8 +89,8 @@ private const val TOOTH_PITCH_DP = 11f     // so a zip gets a tooth for about ev
 private const val MIN_TEETH = 16
 private const val MAX_TEETH = 64
 internal const val RATCHET_STEP = 15f      // degrees per gear tooth
-private const val TRACK_TOP = 0.05f        // slider travel, as fractions of the zip's height
-private const val TRACK_BOTTOM = 0.8f
+internal const val TRACK_TOP = 0.05f       // slider travel, as fractions of the zip's height
+internal const val TRACK_BOTTOM = 0.8f
 private const val FAST_TEETH = 30f         // teeth/s above which ticks would smear; buzz instead
 private const val HEAD = 0.34f             // ratchet head radius, fraction of the half-size
 private const val ZIP_PULL_MS = 1200f      // a TalkBack pull from one end to the other, a brisk tug
@@ -426,154 +423,6 @@ private fun ColumnScope.RatchetPane(
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-}
-
-
-private val Lining = Color(0xFF9E3530)
-private val LiningDeep = Color(0xFF5C1A15)
-private val Panel = Color(0xFF2F4A6D)
-private val Tape = Color(0xFF1E2A38)
-private val Stitch = Color(0xFF8FA6C4)
-private val BrassLight = Color(0xFFF6DF97)
-private val BrassDark = Color(0xFFA67F28)
-private val SteelLight = Color(0xFFF1F3F4)
-private val SteelMid = Color(0xFFBDC1C6)
-private val SteelDark = Color(0xFF5F6368)
-
-/**
- * A jacket-front zip: two fabric panels, each with a tape and a row of brass teeth. Below the slider the
- * rows interlock down the centre; above it the halves peel apart into a V (flattening into parallel edges
- * further up) and show the red lining. The slider is a tapered metal body with its pull tab hanging below.
- */
-private fun DrawScope.drawZip(pos: Float, held: Boolean, teeth: Int) {
-    val w = size.width
-    val h = size.height
-    val cx = w / 2f
-    val top = h * TRACK_TOP
-    val len = h * (TRACK_BOTTOM - TRACK_TOP)
-    val sliderY = top + pos * len
-    val pitch = len / teeth
-    val tw = min(w * 0.11f, pitch * 2.6f) // tooth length across the zip
-    val th = pitch * 0.46f                 // tooth thickness along it
-    val tapeW = w * 0.08f
-    val maxOpen = w * 0.2f
-
-    // Above the top tooth the tapes carry on parallel to wherever the topmost tooth has got to.
-    fun spread(y: Float) = zipSpread(sliderY - max(y, top), maxOpen)
-
-    drawRect(Brush.verticalGradient(listOf(LiningDeep, Lining, LiningDeep)))
-
-    val steps = 72
-    for (s in floatArrayOf(-1f, 1f)) {
-        val outer = if (s < 0f) 0f else w
-        val panel = Path().apply {
-            moveTo(outer, 0f)
-            for (k in 0..steps) {
-                val y = h * k / steps
-                lineTo(cx + s * spread(y), y)
-            }
-            lineTo(outer, h)
-            close()
-        }
-        drawPath(panel, Panel)
-        val tape = Path().apply {
-            for (k in 0..steps) {
-                val y = h * k / steps
-                val x = cx + s * spread(y)
-                if (k == 0) moveTo(x, y) else lineTo(x, y)
-            }
-            for (k in steps downTo 0) {
-                val y = h * k / steps
-                lineTo(cx + s * (spread(y) + tapeW), y)
-            }
-            close()
-        }
-        drawPath(tape, Tape)
-        // Stitching along the tape's outer edge, and a soft shadow where the panel lifts away.
-        val seam = Path().apply {
-            for (k in 0..steps) {
-                val y = h * k / steps
-                val x = cx + s * (spread(y) + tapeW * 0.8f)
-                if (k == 0) moveTo(x, y) else lineTo(x, y)
-            }
-        }
-        drawPath(seam, Stitch, style = Stroke(1.2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()))))
-    }
-
-    // Teeth. Each is square to its tape, so they fan out as the tape angles away in the V.
-    for (i in 0 until teeth) {
-        for (s in floatArrayOf(-1f, 1f)) {
-            val y = top + (i + if (s < 0f) 0.25f else 0.75f) * pitch
-            val inner = cx + s * spread(y)
-            val slope = s * (spread(y + 1f) - spread(y - 1f)) / 2f // dx/dy of this tape's edge
-            val x0 = if (s < 0f) inner - 0.55f * tw else inner - 0.45f * tw
-            rotate(Math.toDegrees(-atan(slope).toDouble()).toFloat(), pivot = Offset(inner, y)) {
-                drawRoundRect(
-                    Brush.verticalGradient(listOf(BrassLight, BrassDark), startY = y - th / 2f, endY = y + th / 2f),
-                    topLeft = Offset(x0, y - th / 2f),
-                    size = Size(tw, th),
-                    cornerRadius = CornerRadius(th * 0.45f),
-                )
-                // The scoop that locks into the neighbouring tooth.
-                val nub = inner + s * tw * 0.3f
-                drawLine(BrassDark, Offset(nub, y - th * 0.25f), Offset(nub, y + th * 0.25f), strokeWidth = th * 0.25f, cap = StrokeCap.Round)
-            }
-        }
-    }
-
-    // Bottom box where the two tapes are anchored.
-    val boxTop = top + len + pitch * 0.1f
-    drawRoundRect(
-        Brush.horizontalGradient(listOf(SteelDark, SteelLight, SteelMid, SteelDark), startX = cx - tw * 0.7f, endX = cx + tw * 0.7f),
-        topLeft = Offset(cx - tw * 0.7f, boxTop),
-        size = Size(tw * 1.4f, pitch * 2f),
-        cornerRadius = CornerRadius(pitch * 0.3f),
-    )
-
-    // Slider body: wide at the top where the teeth part, narrow where they leave interlocked.
-    val sw = tw * 2.4f
-    val bodyTop = sliderY - pitch * 2.2f
-    val bodyBottom = sliderY + pitch * 1.6f
-    val body = Path().apply {
-        moveTo(cx - sw / 2f, bodyTop)
-        lineTo(cx + sw / 2f, bodyTop)
-        lineTo(cx + tw * 0.75f, bodyBottom)
-        lineTo(cx - tw * 0.75f, bodyBottom)
-        close()
-    }
-    drawPath(body, Color.Black.copy(alpha = 0.3f), style = Stroke(3.dp.toPx()))
-    drawPath(body, Brush.horizontalGradient(listOf(SteelDark, SteelLight, SteelMid, SteelDark), startX = cx - sw / 2f, endX = cx + sw / 2f))
-    drawPath(body, SteelDark, style = Stroke(1.dp.toPx()))
-
-    // Pull tab, hinged on the slider and hanging down; it brightens a touch while held.
-    val tabW = tw * 1.3f
-    val tabTop = sliderY - pitch * 0.4f
-    val tabLen = h * 0.12f
-    val shadowOffset = Offset(2.dp.toPx(), 3.dp.toPx())
-    drawRoundRect(
-        Color.Black.copy(alpha = 0.3f),
-        topLeft = Offset(cx - tabW / 2f, tabTop) + shadowOffset,
-        size = Size(tabW, tabLen),
-        cornerRadius = CornerRadius(tabW * 0.35f),
-    )
-    drawRoundRect(
-        Brush.horizontalGradient(
-            if (held) listOf(SteelMid, Color.White, SteelLight, SteelMid) else listOf(SteelDark, SteelLight, SteelMid, SteelDark),
-            startX = cx - tabW / 2f, endX = cx + tabW / 2f,
-        ),
-        topLeft = Offset(cx - tabW / 2f, tabTop),
-        size = Size(tabW, tabLen),
-        cornerRadius = CornerRadius(tabW * 0.35f),
-    )
-    // Finger hole and hinge pin.
-    drawRoundRect(
-        Tape,
-        topLeft = Offset(cx - tabW * 0.22f, tabTop + tabLen * 0.55f),
-        size = Size(tabW * 0.44f, tabLen * 0.3f),
-        cornerRadius = CornerRadius(tabW * 0.22f),
-    )
-    drawCircle(SteelDark, pitch * 0.45f, Offset(cx, sliderY))
-    drawCircle(SteelLight, pitch * 0.25f, Offset(cx, sliderY) - Offset(pitch * 0.1f, pitch * 0.1f))
 }
 
 /**
