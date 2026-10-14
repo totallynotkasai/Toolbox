@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.toolbox.app.games.airhockey.AirHockeyScreen
 import com.toolbox.app.games.battleships.BattleshipsScreen
+import com.toolbox.app.games.blockdrop.BlockDropScreen
 import com.toolbox.app.games.breaker.BlockBreakerScreen
 import com.toolbox.app.games.connectfour.ConnectFourScreen
 import com.toolbox.app.games.dotsboxes.DotsBoxesScreen
@@ -163,6 +164,8 @@ enum class Tool(
         listOf("classic", "nokia", "arcade"), { SnakeScreen(it) }),
     Breaker("breaker", "Block Breaker", ToolIcons.BlockBreaker.vector, GoogleColors.Blue, Category.Solo,
         listOf("breakout", "bricks", "paddle", "arkanoid", "arcade"), { BlockBreakerScreen(it) }),
+    BlockDrop("blockdrop", "Block Drop", ToolIcons.BlockDrop.vector, GoogleColors.Red, Category.Solo,
+        listOf("tetris", "falling blocks", "tetromino", "pieces", "lines", "puzzle", "arcade"), { BlockDropScreen(it) }),
     Reaction("reaction", "Reaction Time", Icons.Filled.Bolt, GoogleColors.Red, Category.Solo,
         listOf("reflex", "reflexes", "speed", "tap", "test", "ms"), { ReactionScreen(it) }),
     Simon("simon", "Simon", ToolIcons.Simon.vector, GoogleColors.Yellow, Category.Solo,

@@ -2,6 +2,10 @@ package com.toolbox.app
 
 import com.toolbox.app.games.airhockey.airHockeyGoalText
 import com.toolbox.app.games.airhockey.airHockeyResultText
+import com.toolbox.app.games.blockdrop.BlockDropGame
+import com.toolbox.app.games.blockdrop.Kind
+import com.toolbox.app.games.blockdrop.Piece
+import com.toolbox.app.games.blockdrop.blockDropState
 import com.toolbox.app.games.hangman.HangmanState
 import com.toolbox.app.games.hangman.snowmanGuessText
 import com.toolbox.app.games.hangman.spokenWord
@@ -11,6 +15,7 @@ import com.toolbox.app.games.snake.SnakeGame
 import com.toolbox.app.games.snake.snakeBoardDescription
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import kotlin.random.Random
 
 class GamesA11yTest {
     @Test fun memorySaysTheSymbolThenWhetherThePairMatches() {
@@ -37,6 +42,19 @@ class GamesA11yTest {
     @Test fun snakeBoardSaysTheScoreAndHeading() {
         assertEquals("Snake, score 0, heading right", snakeBoardDescription(SnakeGame()))
         assertEquals("Snake, score 4, heading up", snakeBoardDescription(SnakeGame(dir = Dir.Up, score = 4)))
+    }
+
+    @Test fun blockDropSaysThePieceItsColumnsAndTheScore() {
+        val game = BlockDropGame(Random(1))
+        assertEquals("Not started", blockDropState(game))
+        game.start()
+        game.place(Piece(Kind.T, 0, 3, 5))
+        assertEquals("T piece in columns 4 to 6. Score 0", blockDropState(game))
+        game.place(Piece(Kind.I, 1, 7, 5))
+        game.softDrop()
+        assertEquals("I piece in column 10. Score 1", blockDropState(game))
+        game.pause()
+        assertEquals("Paused. Score 1", blockDropState(game))
     }
 
     @Test fun airHockeyGoalsAndResultsNameTheSideAndScore() {
