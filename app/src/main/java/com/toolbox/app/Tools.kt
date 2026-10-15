@@ -67,6 +67,7 @@ import com.toolbox.app.tools.units.UnitConverterScreen
 import com.toolbox.app.toys.bubblewrap.BubbleWrapScreen
 import com.toolbox.app.toys.cat.CatScreen
 import com.toolbox.app.toys.dial.DialScreen
+import com.toolbox.app.toys.infinitycube.InfinityCubeScreen
 import com.toolbox.app.toys.rainstick.RainStickScreen
 import com.toolbox.app.toys.switches.SwitchesScreen
 import com.toolbox.app.toys.zip.ZipScreen
@@ -154,6 +155,9 @@ enum class Tool(
         listOf("click", "toggle", "button", "rocker", "slider", "pen", "toy", "fidget", "vibrate"), { SwitchesScreen(it) }),
     Dial("dial", "Rotary Dial", ToolIcons.Dial.vector, GoogleColors.Yellow, Category.Toys,
         listOf("knob", "notches", "turn", "twist", "rotate", "toy", "fidget", "vibrate"), { DialScreen(it) }),
+    InfinityCube("infinitycube", "Infinity Cube", ToolIcons.InfinityCube.vector, GoogleColors.Red, Category.Toys,
+        listOf("fidget cube", "folding cube", "flip", "fold", "hinge", "endless", "toy", "relax", "fidget", "vibrate"),
+        { InfinityCubeScreen(it) }),
     Cat("cat", "Purring Cat", Icons.Filled.Pets, GoogleColors.Yellow, Category.Toys,
         listOf("purr", "stroke", "pet", "kitten", "toy", "relax", "fidget", "vibrate"), { CatScreen(it) }),
     RainStick("rainstick", "Rain Stick", ToolIcons.RainStick.vector, GoogleColors.Green, Category.Toys,
