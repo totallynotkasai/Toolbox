@@ -32,6 +32,7 @@ import com.toolbox.app.games.airhockey.AirHockeyScreen
 import com.toolbox.app.games.battleships.BattleshipsScreen
 import com.toolbox.app.games.blockdrop.BlockDropScreen
 import com.toolbox.app.games.breaker.BlockBreakerScreen
+import com.toolbox.app.games.charades.CharadesScreen
 import com.toolbox.app.games.connectfour.ConnectFourScreen
 import com.toolbox.app.games.dotsboxes.DotsBoxesScreen
 import com.toolbox.app.games.hangman.HangmanScreen
@@ -179,6 +180,10 @@ enum class Tool(
     Stack("stack", "Stack Tower", Icons.Filled.Layers, GoogleColors.Red, Category.Solo,
         listOf("tower", "blocks", "timing", "tap", "arcade", "build"), { StackScreen(it) }),
 
+    Charades("charades", "Charades", ToolIcons.Charades.vector, GoogleColors.Yellow, Category.Duo,
+        listOf("heads up", "forehead", "guess", "guessing", "clues", "words", "cards", "act", "mime", "party", "family",
+            "team", "two player", "multiplayer"),
+        { CharadesScreen(it) }),
     Hangman("hangman", "Snowman", Icons.Filled.AcUnit, GoogleColors.Blue, Category.Duo,
         listOf("hangman", "word", "words", "letters", "guess", "spelling", "two player"), { HangmanScreen(it) }),
     TicTacToe("tictactoe", "Tic-Tac-Toe", ToolIcons.TicTacToe.vector, GoogleColors.Red, Category.Duo,

@@ -35,7 +35,7 @@ class ToolIconsTest {
         glyphs.firstOrNull { it.vector === tool.icon }?.toSvg() ?: tool.icon.toSvg()
 
     @Test fun everyIconIsFound() {
-        assertEquals(17, glyphs.size)
+        assertEquals(18, glyphs.size)
         // Every custom icon is on a tile, so the website has all of them.
         for (g in glyphs) assertTrue(g.name, Tool.entries.any { it.icon === g.vector })
     }

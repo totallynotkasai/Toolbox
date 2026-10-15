@@ -1,0 +1,4 @@
+<!-- Charades: generated from ToolIcons.kt by ToolIconsTest. Edit the Kotlin, not this file. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+  <path d="M6,2.5H18A1.5,1.5 0 0,1 19.5,4V7.6A1.5,1.5 0 0,1 18,9.1H6A1.5,1.5 0 0,1 4.5,7.6V4A1.5,1.5 0 0,1 6,2.5ZM8,5.05V6.55H16V5.05ZM8.7,13.9a3.3,3.3 0 1,1 6.6,0a3.3,3.3 0 1,1 -6.6,0ZM4.5,22V21.2C4.5,19.6 8,18.7 12,18.7S19.5,19.6 19.5,21.2V22Z"/>
+</svg>

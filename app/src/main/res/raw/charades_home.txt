@@ -1,0 +1,72 @@
+Sofa
+Bed
+Pillow
+Duvet
+Lamp
+Television
+Remote control
+Fridge
+Freezer
+Oven
+Microwave
+Kettle
+Toaster
+Washing machine
+Dishwasher
+Vacuum cleaner
+Broom
+Mop
+Bucket
+Ironing board
+Toothbrush
+Toothpaste
+Hairdryer
+Mirror
+Bath
+Shower
+Toilet roll
+Towel
+Soap
+Sponge
+Alarm clock
+Doorbell
+Letterbox
+Keys
+Stairs
+Window
+Curtains
+Radiator
+Fireplace
+Bookshelf
+Wardrobe
+Coat hanger
+Slippers
+Dressing gown
+Umbrella
+Plant pot
+Watering can
+Bin
+Teapot
+Mug
+Frying pan
+Saucepan
+Wooden spoon
+Rolling pin
+Whisk
+Tin opener
+Scissors
+Sticky tape
+Light switch
+Plug
+Phone charger
+Laptop
+Smoke alarm
+Cushion
+Rug
+Fruit bowl
+Calendar
+Fridge magnet
+Torch
+Candle
+Hot water bottle
+Washing basket

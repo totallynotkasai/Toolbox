@@ -1,0 +1,72 @@
+Football
+Rugby
+Cricket
+Tennis
+Golf
+Swimming
+Running
+Cycling
+Basketball
+Netball
+Hockey
+Ice hockey
+Badminton
+Table tennis
+Volleyball
+Baseball
+Rounders
+Boxing
+Karate
+Judo
+Wrestling
+Fencing
+Archery
+Gymnastics
+Trampolining
+Diving
+Synchronised swimming
+Water polo
+Rowing
+Canoeing
+Sailing
+Surfing
+Windsurfing
+Skiing
+Snowboarding
+Ice skating
+Curling
+Bobsleigh
+Skateboarding
+BMX
+Horse riding
+Show jumping
+Darts
+Snooker
+Ten-pin bowling
+Lawn bowls
+Croquet
+Rock climbing
+Marathon
+Hurdles
+High jump
+Long jump
+Pole vault
+Javelin
+Shot put
+Discus
+Triathlon
+Weightlifting
+Yoga
+Dodgeball
+Polo
+Squash
+Motor racing
+Sumo wrestling
+Tug of war
+Egg and spoon race
+Sack race
+Three-legged race
+Mountain biking
+Sprinting
+Kayaking
+Relay race

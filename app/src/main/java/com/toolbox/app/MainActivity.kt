@@ -34,6 +34,7 @@ import androidx.navigation.compose.rememberNavController
 import com.toolbox.app.home.HomeScreen
 import com.toolbox.app.tools.timer.TimerController
 import com.toolbox.app.tools.timer.TimerPhase
+import com.toolbox.app.ui.common.LocalLandscapeLock
 import com.toolbox.app.ui.common.LocalToolRoute
 import com.toolbox.app.ui.common.Prefs
 import com.toolbox.app.ui.theme.ToolboxTheme
@@ -44,23 +45,35 @@ private val OPENABLE_ROUTES = setOf(Tool.Timer.route, Tool.Stopwatch.route)
 /** Debug start route that opens the home screen's Settings sheet instead of a tool. */
 private const val SETTINGS_ROUTE = "settings"
 
-/** Screens that follow the phone's auto-rotate setting; every other screen is portrait, as in the manifest. */
+/**
+ * Screens that follow the phone's auto-rotate setting; every other screen is portrait, as in the manifest, unless it
+ * asks to be sideways for a while through [LocalLandscapeLock].
+ */
 private val FREE_ROTATION_ROUTES = setOf(Tool.Calculator.route)
 
 private const val FREE_ROTATION_KEY = "free_rotation"
+private const val LANDSCAPE_ROUTE_KEY = "landscape_route"
 
 class MainActivity : ComponentActivity() {
     /** A screen an intent asked for, opened over whatever is showing and then cleared. */
     private var openRequest by mutableStateOf<String?>(null)
+
+    /** The screen that has asked to be sideways for now, such as Charades during a round. */
+    private var landscapeRoute by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         Migrations.run(Prefs(this))
-        // A Calculator recreated in landscape asks for free rotation again before its first frame, so the manifest's
-        // portrait lock doesn't turn it back upright while the navigation state is still being restored.
-        if (savedInstanceState?.getBoolean(FREE_ROTATION_KEY) == true) applyOrientation(free = true)
+        // A Calculator recreated in landscape, or a screen that asked to be sideways, asks again before its first
+        // frame, so the manifest's portrait lock doesn't turn it back upright while the navigation state is still
+        // being restored.
+        landscapeRoute = savedInstanceState?.getString(LANDSCAPE_ROUTE_KEY)
+        when {
+            landscapeRoute != null -> applyOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE)
+            savedInstanceState?.getBoolean(FREE_ROTATION_KEY) == true -> applyOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_USER)
+        }
         val debugRoute = debugStartRoute()
         // A recreated activity keeps its old intent, which has already been handled.
         if (savedInstanceState == null) {
@@ -70,12 +83,15 @@ class MainActivity : ComponentActivity() {
         val dynamicColor = debugDynamicColor()
         setContent {
             ToolboxTheme(dynamicColor = dynamicColor) {
-                ToolboxNavHost(
-                    openRequest = openRequest,
-                    onOpened = { openRequest = null },
-                    startWithSettings = debugRoute == SETTINGS_ROUTE,
-                    onRouteShown = { applyOrientation(free = it in FREE_ROTATION_ROUTES) },
-                )
+                CompositionLocalProvider(LocalLandscapeLock provides lockLandscape) {
+                    ToolboxNavHost(
+                        openRequest = openRequest,
+                        onOpened = { openRequest = null },
+                        startWithSettings = debugRoute == SETTINGS_ROUTE,
+                        landscapeRoute = landscapeRoute,
+                        onRouteShown = { route, landscape -> applyOrientation(orientationFor(route, landscape)) },
+                    )
+                }
             }
         }
     }
@@ -98,10 +114,25 @@ class MainActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putBoolean(FREE_ROTATION_KEY, requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_FULL_USER)
+        outState.putString(LANDSCAPE_ROUTE_KEY, landscapeRoute)
     }
 
-    private fun applyOrientation(free: Boolean) {
-        val wanted = if (free) ActivityInfo.SCREEN_ORIENTATION_FULL_USER else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+    /**
+     * A screen asking to be sideways ([on]) or not any more. Only the state changes here: the nav host applies it,
+     * so a screen let go as the activity is torn down doesn't turn the window upright on its way out.
+     */
+    private val lockLandscape: (String, Boolean) -> Unit = { route, on ->
+        if (on) landscapeRoute = route else if (landscapeRoute == route) landscapeRoute = null
+    }
+
+    /** Sideways (either way round) for the screen that asked, only while it's the one showing, so leaving turns upright. */
+    private fun orientationFor(route: String, landscapeRoute: String?) = when (route) {
+        landscapeRoute -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        in FREE_ROTATION_ROUTES -> ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+        else -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+    }
+
+    private fun applyOrientation(wanted: Int) {
         if (requestedOrientation != wanted) requestedOrientation = wanted
     }
 
@@ -151,7 +182,8 @@ private fun ToolboxNavHost(
     openRequest: String?,
     onOpened: () -> Unit,
     startWithSettings: Boolean,
-    onRouteShown: (String) -> Unit,
+    landscapeRoute: String?,
+    onRouteShown: (route: String, landscapeRoute: String?) -> Unit,
 ) {
     val nav = rememberNavController()
     LaunchedEffect(openRequest) {
@@ -162,7 +194,7 @@ private fun ToolboxNavHost(
     // The current entry changes as soon as back is pressed, so leaving the Calculator turns upright straight away.
     val route = nav.currentBackStackEntryAsState().value?.destination?.route
     val currentOnRouteShown by rememberUpdatedState(onRouteShown)
-    LaunchedEffect(route) { route?.let(currentOnRouteShown) }
+    LaunchedEffect(route, landscapeRoute) { route?.let { currentOnRouteShown(it, landscapeRoute) } }
     NavHost(
         navController = nav,
         startDestination = "home",
