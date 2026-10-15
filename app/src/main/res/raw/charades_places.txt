@@ -1,0 +1,72 @@
+Beach
+Library
+Hospital
+School
+Zoo
+Farm
+Supermarket
+Cinema
+Theatre
+Museum
+Airport
+Train station
+Bus stop
+Swimming pool
+Park
+Playground
+Castle
+Lighthouse
+Desert
+Jungle
+North Pole
+Outer space
+The Moon
+Volcano
+Desert island
+Cave
+Waterfall
+Mountain
+Forest
+Campsite
+Funfair
+Circus
+Bakery
+Post office
+Bank
+Restaurant
+Café
+Hairdressers
+Fire station
+Police station
+Football stadium
+Ice rink
+Bowling alley
+Aquarium
+Garden centre
+Car park
+Motorway
+Bridge
+Tunnel
+Pyramids
+Eiffel Tower
+Big Ben
+Stonehenge
+London
+Paris
+New York
+Australia
+Antarctica
+Haunted house
+Treehouse
+Pirate ship
+Submarine
+Space station
+Igloo
+Windmill
+Lake
+River
+Pier
+Market
+Sweet shop
+Skate park
+Petrol station

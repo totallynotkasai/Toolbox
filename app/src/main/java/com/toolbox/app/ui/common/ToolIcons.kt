@@ -109,6 +109,19 @@ object ToolIcons {
         )
     }
 
+    /**
+     * A card held up to a head: a card with a word on it, just above a head and shoulders. Gaps of 1.5 keep the three
+     * apart, and the word is a bar cut out of the card.
+     */
+    val Charades = glyph("Charades") {
+        fill(
+            "M6,2.5H18A1.5,1.5 0 0,1 19.5,4V7.6A1.5,1.5 0 0,1 18,9.1H6A1.5,1.5 0 0,1 4.5,7.6V4A1.5,1.5 0 0,1 6,2.5Z" +
+                "M8,5.05V6.55H16V5.05Z" +
+                circle(12f, 13.9f, 3.3f) +
+                "M4.5,22V21.2C4.5,19.6 8,18.7 12,18.7S19.5,19.6 19.5,21.2V22Z",
+        )
+    }
+
     /** The Simon pad: four quarters with one lit. */
     val Simon = glyph("Simon") {
         fill("M11.15,2.04A10,10 0 0,0 2.04,11.15L11.15,11.15Z")

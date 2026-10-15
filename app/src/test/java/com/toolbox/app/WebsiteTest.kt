@@ -14,7 +14,7 @@ class WebsiteTest {
      * Tools in the app that the live website leaves out until the release that ships them, so it never offers
      * something the APK doesn't have. The 1.3.0 release adds them and empties this.
      */
-    private val unreleased = setOf(Tool.BlockDrop)
+    private val unreleased = setOf(Tool.BlockDrop, Tool.Charades)
     private val listed = Tool.entries - unreleased
 
     private val tile = Regex(

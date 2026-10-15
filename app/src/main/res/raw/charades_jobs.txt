@@ -1,0 +1,72 @@
+Teacher
+Doctor
+Nurse
+Dentist
+Vet
+Firefighter
+Police officer
+Pilot
+Astronaut
+Chef
+Baker
+Farmer
+Builder
+Plumber
+Electrician
+Hairdresser
+Postal worker
+Footballer
+Singer
+Ballet dancer
+Actor
+Magician
+Clown
+Artist
+Photographer
+Scientist
+Librarian
+Lifeguard
+Bus driver
+Train driver
+Taxi driver
+Shop assistant
+Waiter
+Judge
+Gardener
+Window cleaner
+Zookeeper
+Mechanic
+Carpenter
+Painter and decorator
+Optician
+Pharmacist
+Paramedic
+Soldier
+Sailor
+Fisherman
+Butcher
+Newsreader
+Weather presenter
+Referee
+Beekeeper
+Shepherd
+Archaeologist
+Detective
+Spy
+Inventor
+Explorer
+Tour guide
+Juggler
+Opera singer
+DJ
+Comedian
+Author
+Security guard
+Delivery driver
+Bin collector
+Dog walker
+Babysitter
+Personal trainer
+Surgeon
+Lumberjack
+Ice cream seller
