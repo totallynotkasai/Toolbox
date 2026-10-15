@@ -97,6 +97,18 @@ object ToolIcons {
         )
     }
 
+    /**
+     * A T piece a row above the notch it fits, over a stack of two pieces that interlock. The pieces sit on a grid of
+     * 5-unit cells, each inset by 0.75, so a gap of 1.5 shows where they meet.
+     */
+    val BlockDrop = glyph("BlockDrop") {
+        fill(
+            "M2.75,2.75H16.25V6.25H11.25V11.25H7.75V6.25H2.75Z" +
+                "M17.75,7.75H21.25V21.25H17.75V16.25H12.75V12.75H17.75Z" +
+                "M2.75,12.75H6.25V17.75H16.25V21.25H2.75Z",
+        )
+    }
+
     /** The Simon pad: four quarters with one lit. */
     val Simon = glyph("Simon") {
         fill("M11.15,2.04A10,10 0 0,0 2.04,11.15L11.15,11.15Z")
