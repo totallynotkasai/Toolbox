@@ -20,13 +20,15 @@ import java.util.Locale
  * The same paths are exported to `docs/icons/` for the website by `ToolIconsTest`.
  */
 object ToolIcons {
-    /** Black ball with a white window showing an "8". */
+    /**
+     * Black ball with a white window showing a bold "8". The 8's two bowls share one outline, so its middle bar is as
+     * thick as its sides (two stacked rings doubled it and read as a snowman).
+     */
     val EightBall = glyph("EightBall") {
         fill(
-            "M2,12a10,10 0 1,1 20,0a10,10 0 1,1 -20,0Z" +
-                "M6.6,12a5.4,5.4 0 1,0 10.8,0a5.4,5.4 0 1,0 -10.8,0Z" +
-                "M10,9.65a2,2 0 1,1 4,0a2,2 0 1,1 -4,0ZM11.15,9.65a0.85,0.85 0 1,0 1.7,0a0.85,0.85 0 1,0 -1.7,0Z" +
-                "M9.7,13.9a2.3,2.3 0 1,1 4.6,0a2.3,2.3 0 1,1 -4.6,0ZM10.95,13.9a1.05,1.05 0 1,0 2.1,0a1.05,1.05 0 1,0 -2.1,0Z",
+            circle(12f, 12f, 10f) + circle(12f, 12f, 6.8f, hole = true) +
+                "M9.72,11.55A3.12,3.12 0 1,1 14.28,11.55A3.5,3.5 0 1,1 9.72,11.55Z" +
+                circle(12f, 9.42f, 1.27f, hole = true) + circle(12f, 14.2f, 1.65f, hole = true),
         )
     }
 
