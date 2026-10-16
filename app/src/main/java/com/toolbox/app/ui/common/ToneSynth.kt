@@ -19,6 +19,7 @@ import kotlin.random.Random
  * - [rattle]: a very short metallic tick, repeated quickly for a coin spinning down on a table.
  * - [knock]: a dull plastic clack, for dice hitting the table or each other.
  * - [tick]: a short wooden "tock", for the wheel spinner's clicker.
+ * - [card]: a playing card laid down or flicked off the deck, for Solitaire.
  *
  * Calls are thread-safe and cheap: they only queue a voice for the audio thread. Sounds asked for while stopped
  * are dropped, and anything still queued is cleared on [stop], so nothing bursts out on returning to the app.
@@ -47,6 +48,12 @@ class ToneSynth : PcmStream("tone-synth") {
 
     /** A short wooden "tock", for a wheel's clicker. */
     fun tick() { queue(TickVoice()) }
+
+    /**
+     * A playing card: the soft slap of one laid on the table, or with [flick] the quick brush of one dealt off the
+     * deck. [intensity] 0–1 sets how hard.
+     */
+    fun card(intensity: Float = 0.5f, flick: Boolean = false) { queue(CardVoice(intensity.coerceIn(0f, 1f), flick)) }
 
     /** Fades out everything that is sounding, e.g. when a game ends mid-sequence. */
     fun silence() {
@@ -230,6 +237,31 @@ class ToneSynth : PcmStream("tone-synth") {
             val time = t.toDouble() / sampleRate
             val body = sin(2 * PI * 1900 * time) * 0.6 + sin(2 * PI * 3100 * time) * 0.25
             val out = env * (body.toFloat() + (Random.nextFloat() - 0.5f) * 0.5f) * 0.55f
+            env *= decay
+            t++
+            return out
+        }
+        override fun release() { env = minOf(env, 0.01f) }
+    }
+
+    private inner class CardVoice(intensity: Float, flick: Boolean) : Voice() {
+        // Noise through a one-pole low-pass, dying away fast. A card laid down is darker and longer, with a little
+        // thump of the table under it; a flick is brighter and shorter.
+        private val decay = exp(-1.0 / ((if (flick) 0.007 else 0.016) * sampleRate)).toFloat()
+        private val smooth = if (flick) 0.6f else 0.2f
+        private val thump = if (flick) 0f else 0.35f
+        private val attack = samples(0.0015)
+        private val gain = (0.12f + 0.3f * intensity) * (1 + (Random.nextFloat() - 0.5f) * 0.2f)
+        private var env = 1f
+        private var low = 0f
+
+        override val done get() = env < 0.001f
+        override fun next(): Float {
+            if (done) return 0f
+            low += smooth * ((Random.nextFloat() - 0.5f) * 2f - low)
+            val body = thump * sin(2 * PI * 140 * t / sampleRate).toFloat() * env * env
+            val rise = if (t < attack) t / attack.toFloat() else 1f
+            val out = (low * 1.6f + body) * env * rise * gain
             env *= decay
             t++
             return out
