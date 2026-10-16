@@ -41,6 +41,7 @@ import com.toolbox.app.games.memory.MemoryScreen
 import com.toolbox.app.games.reaction.ReactionScreen
 import com.toolbox.app.games.simon.SimonScreen
 import com.toolbox.app.games.snake.SnakeScreen
+import com.toolbox.app.games.solitaire.SolitaireScreen
 import com.toolbox.app.games.stack.StackScreen
 import com.toolbox.app.games.tictactoe.TicTacToeScreen
 import com.toolbox.app.games.twentyfortyeight.Game2048Screen
@@ -182,6 +183,8 @@ enum class Tool(
         listOf("simon says", "memory", "sequence", "pattern", "colours", "sounds", "repeat"), { SimonScreen(it) }),
     Memory("memory", "Memory Game", Icons.Filled.Style, GoogleColors.Yellow, Category.Solo,
         listOf("pairs", "match", "cards", "concentration", "puzzle"), { MemoryScreen(it) }),
+    Solitaire("solitaire", "Solitaire", ToolIcons.Solitaire.vector, GoogleColors.Green, Category.Solo,
+        listOf("patience", "klondike", "cards", "card game", "deck", "spades"), { SolitaireScreen(it) }),
     Game2048("2048", "2048", ToolIcons.Merge2048.vector, GoogleColors.Yellow, Category.Solo,
         listOf("tiles", "merge", "slide", "puzzle"), { Game2048Screen(it) }),
     LightsOut("lightsout", "Lights Out", Icons.Filled.Lightbulb, GoogleColors.Green, Category.Solo,

@@ -121,6 +121,22 @@ object ToolIcons {
     }
 
     /**
+     * Two cards fanned out, the front one the ace of spades with its spade cut out. The card behind is an outline that
+     * stops under the front card's border, so none of it shows through the spade.
+     */
+    val Solitaire = glyph("Solitaire") {
+        turned(-14f, 10f, 11f) { line("M15,8V6A2,2 0 0,0 13,4H7A2,2 0 0,0 5,6V16A2,2 0 0,0 7,18H12") }
+        turned(10f, 14f, 12f) {
+            fill(
+                "M10.8,5H17.2A1.8,1.8 0 0,1 19,6.8V17.2A1.8,1.8 0 0,1 17.2,19H10.8A1.8,1.8 0 0,1 9,17.2V6.8A1.8,1.8 0 0,1 10.8,5Z" +
+                    "M14,8.35C13.18,9.68 10.6,11.01 10.6,12.64C10.6,13.82 11.48,14.49 12.37,14.49C13.05,14.49 13.52,14.12 13.8,13.6" +
+                    "C13.66,14.49 13.32,15.08 12.78,15.45L15.22,15.45C14.68,15.08 14.34,14.49 14.2,13.6" +
+                    "C14.48,14.12 14.95,14.49 15.63,14.49C16.52,14.49 17.4,13.82 17.4,12.64C17.4,11.01 14.82,9.68 14,8.35Z",
+            )
+        }
+    }
+
+    /**
      * A card held up to a head: a card with a word on it, just above a head and shoulders. Gaps of 1.5 keep the three
      * apart, and the word is a bar cut out of the card.
      */

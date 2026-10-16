@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
@@ -87,6 +88,7 @@ fun accessibilityActions(vararg actions: Pair<String, () -> Unit>): List<CustomA
  * One part of a board drawn on a Canvas, as TalkBack sees it: [rect] is where it is, in pixels from the board's
  * top-left. [state] is read after the [description]. A [button] is something that can be chosen at some point in
  * the game, and [onClick] null means it can't be chosen now; otherwise it's only there to be read, like a claimed box.
+ * [actions] go in TalkBack's actions menu, for a part that can do more than one thing.
  */
 class BoardTarget(
     val key: Any,
@@ -96,6 +98,7 @@ class BoardTarget(
     val clickLabel: String? = null,
     val onClick: (() -> Unit)? = null,
     val button: Boolean = true,
+    val actions: List<CustomAccessibilityAction> = emptyList(),
 )
 
 /**
@@ -112,6 +115,7 @@ fun BoardTargets(targets: List<BoardTarget>, modifier: Modifier = Modifier) {
                     Modifier.semantics {
                         contentDescription = t.description
                         t.state?.let { stateDescription = it }
+                        if (t.actions.isNotEmpty()) customActions = t.actions
                         if (t.button) {
                             role = Role.Button
                             val click = t.onClick
