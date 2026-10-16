@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.3.0
+
+Four new tools, for 44 in all, and a redrawn Purring Cat and Zip.
+
+It installs over 1.2.0 and keeps your scores, favourites and settings. If you still have 1.0.0, see the note under 1.2.0.
+
+### New
+
+- **Block Drop** (Solo Games), a falling-blocks puzzle. Drag sideways to move a piece, tap to turn it, drag down to drop it faster, or flick down to drop it at once. The next piece shows beside the well, a ghost shows where this one will land, and the game speeds up every 10 lines. Your best score is kept, and it pauses when you leave. Searching "tetris" finds it.
+- **Charades** (Duo Games), the guessing game with the phone on your forehead. Pick one of eight decks, from Animals to Characters, or make your own, and a round of 30, 60 or 90 seconds. Hold the phone up sideways and it counts in. Tip the screen down when you guess the word, or up to pass, or tap the right or left half instead. At the end you see what you got and what you passed. Cards don't come round again until you've seen the whole deck, even on another day. Searching "heads up" finds it.
+- **Infinity Cube** (Fidget Toys), eight little cubes hinged together that fold open, roll over and close into a cube again, endlessly. Every other time, it closes inside out. Drag any part and it follows your finger, then snaps into place with a click. Two fingers turn it round to look at it from another side.
+- **Soundscapes** (Calm). Rain, waves, wind, fire, and white, pink and brown noise, each with its own switch and volume, made on the phone rather than played from recordings. It keeps playing with the screen off or the app closed, with play, pause and stop in the notifications, on the lock screen and from headphones, and it pauses for calls. A sleep timer of 15 to 90 minutes fades it out and stops it. Your mix is remembered.
+
+### Changed
+
+- **Purring Cat:** a new, cuter cat, with a big round head, big shiny eyes and rosy cheeks. It still purrs when you stroke it from head to tail, and still grumbles the other way.
+- **Zip:** teeth that interlock like a real zip's, and a new slider and pull tab.
+
+### Permissions
+
+- **Playing in the background.** Soundscapes plays through a media service, as music apps do, so it carries on with the screen off. Android grants this when the app is installed, so nothing is asked. Its media controls show even if Toolbox's notifications are turned off.
+
+### Behind the scenes
+
+- About 495 unit tests.
+- Your own Charades decks, the cards each deck has played, and the Soundscapes mix and sleep timer go into your Android backup like the rest.
+
 ## 1.2.0
 
 New features for eight tools. It also includes everything listed under 1.1.0, which wasn't released on its own.

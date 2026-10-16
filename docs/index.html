@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Toolbox for Android</title>
-<meta name="description" content="Toolbox: 40 everyday tools, fidget toys and mini-games in one small Android app. No ads, no tracking, no third-party libraries.">
+<meta name="description" content="Toolbox: 44 everyday tools, fidget toys and mini-games in one small Android app. No ads, no tracking, no third-party libraries.">
 <meta property="og:title" content="Toolbox for Android">
-<meta property="og:description" content="40 everyday tools, fidget toys and mini-games in one small, ad-free Android app.">
+<meta property="og:description" content="44 everyday tools, fidget toys and mini-games in one small, ad-free Android app.">
 <meta name="theme-color" content="#1A73E8">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -165,7 +165,8 @@ h2 { font-size: clamp(28px, 4vw, 38px); letter-spacing: -.01em; margin: 0 0 8px;
 
 /* Install */
 .install { background: var(--surface); border-radius: 28px; padding: 36px; display: grid; grid-template-columns: 1fr 1fr; gap: 36px; }
-@media (max-width: 760px) { .install { grid-template-columns: 1fr; padding: 24px; } }
+/* min-width: 0 lets the commands scroll inside their box on a phone, rather than the whole page */
+@media (max-width: 760px) { .install { grid-template-columns: 1fr; padding: 24px; } .install > div { min-width: 0; } }
 .install ol { margin: 0; padding-left: 22px; }
 .install li { margin-bottom: 10px; }
 .note { border-left: 3px solid var(--primary); padding: 2px 0 2px 12px; color: var(--text-2); font-size: 14px; margin: 16px 0 0; }
@@ -195,12 +196,12 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space
     <div>
       <span class="eyebrow"><span class="ms" style="font-size:18px">android</span>Android 8.0 and up</span>
       <h1>Toolbox<span class="dots"><i style="background:var(--blue)"></i><i style="background:var(--red)"></i><i style="background:var(--yellow)"></i><i style="background:var(--green)"></i></span></h1>
-      <p class="lede">Flip a coin, tune a guitar, time an egg, pop some bubble wrap, or beat a friend at Connect Four. Forty small everyday tools, fidget toys and games in one tidy, ad-free app.</p>
+      <p class="lede">Flip a coin, tune a guitar, time an egg, pop some bubble wrap, or beat a friend at Connect Four. Forty-four small everyday tools, fidget toys and games in one tidy, ad-free app.</p>
       <div class="cta">
         <a class="btn primary" href="https://github.com/totallynotkasai/Toolbox/releases/latest"><span class="ms">download</span>Download APK</a>
         <a class="btn tonal" href="https://github.com/totallynotkasai/Toolbox"><span class="ms">code</span>View source</a>
       </div>
-      <p class="fine">Free and offline. No ads, no accounts, no tracking. <a href="https://github.com/totallynotkasai/Toolbox/blob/main/CHANGELOG.md">What’s new in 1.2.0</a></p>
+      <p class="fine">Free and offline. No ads, no accounts, no tracking. <a href="https://github.com/totallynotkasai/Toolbox/blob/main/CHANGELOG.md">What’s new in 1.3.0</a></p>
     </div>
 
     <div class="phone" aria-hidden="true">
@@ -230,7 +231,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space
 
 <div class="wrap">
   <div class="stats">
-    <div class="stat"><b>40</b><span>tools, toys and games</span></div>
+    <div class="stat"><b>44</b><span>tools, toys and games</span></div>
     <div class="stat"><b>0</b><span>ads, trackers or accounts</span></div>
     <div class="stat"><b>0</b><span>third-party libraries</span></div>
     <div class="stat"><b>100%</b><span>works offline</span></div>
@@ -316,6 +317,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space
         <div class="tile" data-tool="bubblewrap"><span class="ic c-green" style="--i:url(icons/bubblewrap.svg)"></span><div><b>Bubble Wrap</b><span>Pop, pop, pop. Some bubbles are stubborn.</span></div></div>
         <div class="tile" data-tool="switches"><span class="ic c-red" style="--i:url(icons/switches.svg)"></span><div><b>Clicky Switches</b><span>A toggle, rocker, arcade button, clicky pen and notched slider.</span></div></div>
         <div class="tile" data-tool="fidget"><span class="ic c-blue" style="--i:url(icons/fidget.svg)"></span><div><b>Fidget Spinner</b><span>Flick it up to 1,200 RPM, or rest a finger on it to brake.</span></div></div>
+        <div class="tile" data-tool="infinitycube"><span class="ic c-red" style="--i:url(icons/infinitycube.svg)"></span><div><b>Infinity Cube</b><span>Eight hinged cubes that fold open, roll over and close again, forever. It follows your finger and snaps shut with a click.</span></div></div>
         <div class="tile" data-tool="cat"><span class="ic c-yellow" style="--i:url(icons/cat.svg)"></span><div><b>Purring Cat</b><span>Stroke from head to tail to make it purr. Not the other way.</span></div></div>
         <div class="tile" data-tool="rainstick"><span class="ic c-green" style="--i:url(icons/rainstick.svg)"></span><div><b>Rain Stick</b><span>Tilt the phone to pour 200 grains past the pegs.</span></div></div>
         <div class="tile" data-tool="dial"><span class="ic c-yellow" style="--i:url(icons/dial.svg)"></span><div><b>Rotary Dial</b><span>Fine clicks, chunky detents, or a free spin.</span></div></div>
@@ -325,9 +327,10 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space
 
     <div class="cat" data-c="Calm">
       <h3><span class="glyph" style="--i:url(icons/meditate.svg)"></span>Calm</h3>
-      <p>Slow down for a minute.</p>
+      <p>Slow down for a minute, or drift off to the sound of rain.</p>
       <div class="tiles">
         <div class="tile" data-tool="meditate"><span class="ic c-green" style="--i:url(icons/meditate.svg)"></span><div><b>Meditate</b><span>Guided breathing in three patterns, for 1 to 10 minutes, with a gentle vibration while you breathe in.</span></div></div>
+        <div class="tile" data-tool="soundscapes"><span class="ic c-blue" style="--i:url(icons/soundscapes.svg)"></span><div><b>Soundscapes</b><span>Rain, waves, wind, fire and three kinds of noise, mixed your way. Keeps playing with the screen off, with a sleep timer.</span></div></div>
       </div>
     </div>
 
@@ -337,6 +340,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space
       <div class="tiles">
         <div class="tile" data-tool="2048"><span class="ic c-yellow" style="--i:url(icons/2048.svg)"></span><div><b>2048</b><span>Slide and merge the tiles, and keep going past 2048.</span></div></div>
         <div class="tile" data-tool="breaker"><span class="ic c-blue" style="--i:url(icons/breaker.svg)"></span><div><b>Block Breaker</b><span>Classic, or Action with steel and explosive bricks and power-ups.</span></div></div>
+        <div class="tile" data-tool="blockdrop"><span class="ic c-red" style="--i:url(icons/blockdrop.svg)"></span><div><b>Block Drop</b><span>Falling blocks, with the next piece, a ghost where it lands and hard drops. Faster every 10 lines.</span></div></div>
         <div class="tile" data-tool="lightsout"><span class="ic c-green" style="--i:url(icons/lightsout.svg)"></span><div><b>Lights Out</b><span>Every puzzle has a par to beat, and hints if you’re stuck.</span></div></div>
         <div class="tile" data-tool="memory"><span class="ic c-yellow" style="--i:url(icons/memory.svg)"></span><div><b>Memory Game</b><span>Find the eight pairs in as few moves as you can.</span></div></div>
         <div class="tile" data-tool="reaction"><span class="ic c-red" style="--i:url(icons/reaction.svg)"></span><div><b>Reaction Time</b><span>Five rounds: tap the moment it turns green.</span></div></div>
@@ -348,10 +352,11 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space
 
     <div class="cat" data-c="Duo">
       <h3><span class="ms">group</span>Duo Games</h3>
-      <p>Every one can be played against the computer or with a friend on the same phone, with a saved tally for each.</p>
+      <p>Charades is for a room full of people. The rest can be played against the computer or with a friend on the same phone, with a saved tally for each.</p>
       <div class="tiles">
         <div class="tile" data-tool="airhockey"><span class="ic c-red" style="--i:url(icons/airhockey.svg)"></span><div><b>Air Hockey</b><span>First to seven, against the computer or a friend at the other end.</span></div></div>
         <div class="tile" data-tool="battleships"><span class="ic c-blue" style="--i:url(icons/battleships.svg)"></span><div><b>Battleships</b><span>Place your fleet, then take on the computer, or pass the phone between turns.</span></div></div>
+        <div class="tile" data-tool="charades"><span class="ic c-yellow" style="--i:url(icons/charades.svg)"></span><div><b>Charades</b><span>Phone on your forehead: tip it down when you guess the word, or up to pass. Eight decks, or make your own.</span></div></div>
         <div class="tile" data-tool="connectfour"><span class="ic c-blue" style="--i:url(icons/connectfour.svg)"></span><div><b>Connect Four</b><span>Four in a row, with undo.</span></div></div>
         <div class="tile" data-tool="dotsboxes"><span class="ic c-green" style="--i:url(icons/dotsboxes.svg)"></span><div><b>Dots and Boxes</b><span>3×3 to 5×5 boards.</span></div></div>
         <div class="tile" data-tool="hangman"><span class="ic c-blue" style="--i:url(icons/hangman.svg)"></span><div><b>Snowman</b><span>Hangman with a melting snowman instead of a gallows.</span></div></div>
