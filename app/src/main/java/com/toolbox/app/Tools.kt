@@ -35,6 +35,7 @@ import com.toolbox.app.games.breaker.BlockBreakerScreen
 import com.toolbox.app.games.charades.CharadesScreen
 import com.toolbox.app.games.connectfour.ConnectFourScreen
 import com.toolbox.app.games.dotsboxes.DotsBoxesScreen
+import com.toolbox.app.games.draughts.DraughtsScreen
 import com.toolbox.app.games.hangman.HangmanScreen
 import com.toolbox.app.games.lightsout.LightsOutScreen
 import com.toolbox.app.games.memory.MemoryScreen
@@ -202,6 +203,8 @@ enum class Tool(
         listOf("noughts and crosses", "x o", "two player"), { TicTacToeScreen(it) }),
     ConnectFour("connectfour", "Connect Four", ToolIcons.ConnectFour.vector, GoogleColors.Blue, Category.Duo,
         listOf("connect 4", "four in a row", "discs", "drop", "two player"), { ConnectFourScreen(it) }),
+    Draughts("draughts", "Draughts", ToolIcons.Draughts.vector, GoogleColors.Yellow, Category.Duo,
+        listOf("checkers", "board game", "kings", "jump", "two player", "pass and play"), { DraughtsScreen(it) }),
     DotsBoxes("dotsboxes", "Dots and Boxes", Icons.Filled.Grain, GoogleColors.Green, Category.Duo,
         listOf("dots", "boxes", "lines", "squares", "pen and paper", "two player"), { DotsBoxesScreen(it) }),
     AirHockey("airhockey", "Air Hockey", Icons.Filled.SportsHockey, GoogleColors.Red, Category.Duo,

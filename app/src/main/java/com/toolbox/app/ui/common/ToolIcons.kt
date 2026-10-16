@@ -172,6 +172,18 @@ object ToolIcons {
         detail("M19.1,5H20.5L21.6,3.9M20.5,5L21.6,6.1")
     }
 
+    /**
+     * A draughts king: two pieces stacked, seen from above. The top one has a groove round its face and a crown cut out
+     * of it, and the one underneath shows as a crescent kept 1.5 clear of it.
+     */
+    val Draughts = glyph("Draughts") {
+        fill(
+            "M8.57,19.8A8,8 0 0,0 19.8,8.57A9.5,9.5 0 0,1 8.57,19.8Z" +
+                circle(10.5f, 10.5f, 8f) + circle(10.5f, 10.5f, 6.3f, hole = true) + circle(10.5f, 10.5f, 5.2f) +
+                "M8.06,13.18L12.94,13.18L13.4,9.37L11.95,10.8L10.5,8.42L9.05,10.8L7.6,9.37Z",
+        )
+    }
+
     /** The upright board on its legs, with discs in the four slots of a rising diagonal. */
     val ConnectFour = glyph("ConnectFour") {
         val columns = listOf(5f, 9.67f, 14.33f, 19f)
