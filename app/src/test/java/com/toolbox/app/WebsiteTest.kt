@@ -13,9 +13,9 @@ class WebsiteTest {
     /**
      * Tools in the app that the live website leaves out until the release that ships them, so it never offers
      * something the APK doesn't have. A new tool goes in here, and the release that ships it adds its tile and
-     * takes it out. Empty at 1.3.0; 1.4.0 ships Solitaire and Draughts.
+     * takes it out. Empty since 1.4.0.
      */
-    private val unreleased = setOf(Tool.Solitaire, Tool.Draughts)
+    private val unreleased = emptySet<Tool>()
     private val listed = Tool.entries - unreleased
 
     private val tile = Regex(

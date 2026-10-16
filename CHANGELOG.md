@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.4.0
+
+Two new games, for 46 in all, and a clearer Magic 8-Ball icon.
+
+It installs over 1.3.0 and keeps your scores, favourites and settings. If you still have 1.0.0, see the note under 1.2.0.
+
+### New
+
+- **Solitaire** (Solo Games), the classic Klondike patience, with Draw 1 or Draw 3. Tap a card to send it where it fits, or drag it anywhere it can go, and undo as far back as you like. Once every card is face up, the game finishes itself. If nothing useful is left to do, it says so, so you can undo or deal again. Your moves and time show as you play, and your best time and the games you've won are kept for each draw. A game in progress waits for you to come back. Searching "patience" or "klondike" finds it.
+- **Draughts** (Duo Games), English draughts against the computer or a friend. Captures are compulsory, and the pieces that can capture are ringed. Tap a piece and then where it goes, or drag it. A run of jumps goes one landing at a time. Against the computer you're red, and who starts takes turns. With two players the phone lies flat between you, and the player at the top gets their own turn line, turned to face them. A game in progress waits for you to come back. Searching "checkers" finds it.
+
+### Changed
+
+- **Magic 8-Ball:** a new icon. The 8 was two rings stacked on top of each other, and now it looks like an 8.
+
+### Behind the scenes
+
+- About 517 unit tests.
+- Your Solitaire game and its stats, and your Draughts game, go into your Android backup like the rest.
+
 ## 1.3.0
 
 Four new tools, for 44 in all, and a redrawn Purring Cat and Zip.
