@@ -81,6 +81,15 @@ object ToolIcons {
         )
     }
 
+    /**
+     * A crescent moon over two waves: night, and sound. The moon is what's left of a circle of radius 5 at (12, 7)
+     * outside one of radius 4.3 at (14.6, 5.2); the arcs meet where the two circles cross.
+     */
+    val Soundscapes = glyph("Soundscapes") {
+        fill("M11.72,2.01A5,5 0 1,0 16.57,9.02A4.3,4.3 0 0,1 11.72,2.01Z")
+        line("M3,15q2.25,-2 4.5,0t4.5,0t4.5,0t4.5,0M3,19.5q2.25,-2 4.5,0t4.5,0t4.5,0t4.5,0")
+    }
+
     /** Two "2"s tipping into each other, with impact sparks above. */
     val Merge2048 = glyph("Merge2048") {
         val two = "M0.2,3A2.8,2.8 0 1,1 5.29,4.61L0.2,9H6.2"

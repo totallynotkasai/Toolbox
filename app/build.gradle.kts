@@ -52,13 +52,18 @@ android {
 }
 
 // ToolIconsTest checks the website's icons in docs/icons against every tool's icon; `-PupdateIcons` rewrites them
-// instead. WebsiteTest checks the tool list in docs/index.html against Tools.kt.
+// instead. WebsiteTest checks the tool list in docs/index.html against Tools.kt. `-PwriteSounds` has SoundscapesTest
+// write each sound to a WAV file in build/sounds, for listening to.
 tasks.withType<Test>().configureEach {
     val icons = rootProject.file("docs/icons")
     val website = rootProject.file("docs/index.html")
     systemProperty("iconsDir", icons.path)
     systemProperty("websiteFile", website.path)
     systemProperty("updateIcons", providers.gradleProperty("updateIcons").isPresent)
+    if (providers.gradleProperty("writeSounds").isPresent) {
+        systemProperty("soundsDir", layout.buildDirectory.dir("sounds").get().asFile.path)
+        outputs.upToDateWhen { false }
+    }
     if (icons.isDirectory) inputs.dir(icons).withPropertyName("websiteIcons")
     if (website.isFile) inputs.file(website).withPropertyName("website")
 }

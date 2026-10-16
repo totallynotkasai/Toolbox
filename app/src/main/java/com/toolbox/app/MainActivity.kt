@@ -40,7 +40,7 @@ import com.toolbox.app.ui.common.Prefs
 import com.toolbox.app.ui.theme.ToolboxTheme
 
 /** Screens a notification may open through [MainActivity.EXTRA_OPEN], in release builds too. */
-private val OPENABLE_ROUTES = setOf(Tool.Timer.route, Tool.Stopwatch.route)
+private val OPENABLE_ROUTES = setOf(Tool.Timer.route, Tool.Stopwatch.route, Tool.Soundscapes.route)
 
 /** Debug start route that opens the home screen's Settings sheet instead of a tool. */
 private const val SETTINGS_ROUTE = "settings"

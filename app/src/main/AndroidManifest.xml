@@ -20,6 +20,8 @@
          continuing an alarm by apps that hold USE_EXACT_ALARM. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
+    <!-- Soundscapes: SoundscapeService keeps playing with the screen off. Granted at install; nothing is asked. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <!-- Compass: approximate location, asked for when True north is turned on, to work out the magnetic declination
          offline. Only the declination is kept, never the location. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
@@ -72,6 +74,12 @@
             android:name=".tools.timer.TimerAlarmService"
             android:exported="false"
             android:foregroundServiceType="systemExempted" />
+
+        <!-- Soundscapes: plays from Play until Stop, through its media notification's buttons too. -->
+        <service
+            android:name=".tools.soundscapes.SoundscapeService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <!-- Stopwatch: the buttons on its notification. -->
         <receiver

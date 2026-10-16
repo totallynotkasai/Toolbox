@@ -57,6 +57,7 @@ import com.toolbox.app.tools.meditate.MeditateScreen
 import com.toolbox.app.tools.metronome.MetronomeScreen
 import com.toolbox.app.tools.random.RandomNumberScreen
 import com.toolbox.app.tools.soundmeter.SoundMeterScreen
+import com.toolbox.app.tools.soundscapes.SoundscapesScreen
 import com.toolbox.app.tools.spinner.SpinnerScreen
 import com.toolbox.app.tools.steps.StepCounterScreen
 import com.toolbox.app.tools.stopwatch.StopwatchScreen
@@ -147,6 +148,10 @@ enum class Tool(
 
     Meditate("meditate", "Meditate", ToolIcons.Lotus.vector, GoogleColors.Green, Category.Calm,
         listOf("breathe", "breathing", "calm", "mindfulness", "relax"), { MeditateScreen(it) }),
+    Soundscapes("soundscapes", "Soundscapes", ToolIcons.Soundscapes.vector, GoogleColors.Blue, Category.Calm,
+        listOf("white noise", "pink noise", "brown noise", "noise", "rain", "waves", "sea", "ocean", "wind", "fire",
+            "nature", "ambient", "sleep", "sleep timer", "focus", "relax", "calm"),
+        { SoundscapesScreen(it) }),
     Fidget("fidget", "Fidget Spinner", ToolIcons.FidgetSpinner.vector, GoogleColors.Blue, Category.Toys,
         listOf("spin", "toy", "stress", "relax", "fidget", "vibrate"), { FidgetSpinnerScreen(it) }),
     BubbleWrap("bubblewrap", "Bubble Wrap", ToolIcons.BubbleWrap.vector, GoogleColors.Green, Category.Toys,
