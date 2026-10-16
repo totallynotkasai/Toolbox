@@ -1,0 +1,4 @@
+<!-- Draughts: generated from ToolIcons.kt by ToolIconsTest. Edit the Kotlin, not this file. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+  <path d="M8.57,19.8A8,8 0 0,0 19.8,8.57A9.5,9.5 0 0,1 8.57,19.8ZM2.5,10.5a8,8 0 1,1 16,0a8,8 0 1,1 -16,0ZM4.2,10.5a6.3,6.3 0 1,0 12.6,0a6.3,6.3 0 1,0 -12.6,0ZM5.3,10.5a5.2,5.2 0 1,1 10.4,0a5.2,5.2 0 1,1 -10.4,0ZM8.06,13.18L12.94,13.18L13.4,9.37L11.95,10.8L10.5,8.42L9.05,10.8L7.6,9.37Z"/>
+</svg>
